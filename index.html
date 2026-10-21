@@ -337,11 +337,12 @@ function micNote(){
 }
 function startListening(tok){
   heard=''; lastHeardAt=0;
-  if(!micOn()) return;
+  if(!micOn() || tok!==S.token || S.phase!=='respond') return;
+  abortListening();
   try{
     const r=new SR(); rec=r;
     r.lang=S.cfg.lang; r.interimResults=true; r.continuous=true; r.maxAlternatives=1;
-    r.onresult=e=>{ if(tok!==S.token) return;
+    r.onresult=e=>{ if(tok!==S.token || rec!==r || S.phase!=='respond') return;
       let t=''; for(const x of e.results) t+=x[0].transcript+' ';
       heard=t.trim(); lastHeardAt=performance.now(); $('live').textContent=heard; };
     r.onerror=e=>{ if(e.error==='not-allowed'||e.error==='service-not-allowed'||e.error==='audio-capture'){micBlocked=true;micNote();render()} };
@@ -426,6 +427,7 @@ function playCurrent(){
 }
 let rafId;
 function respond(tok){
+  heard=''; lastHeardAt=0;
   beep(); S.phase='respond'; $('live').textContent=''; render();
   later(()=>startListening(tok),250,tok);
   const total=respondSecs(S.queue[S.pos])*1000, t0=performance.now();
@@ -433,7 +435,7 @@ function respond(tok){
     const now=performance.now(), left=Math.max(0,total-(now-t0));
     setRing(left/total, Math.ceil(left/1000));
     // finish early once you've spoken and then paused for 2 seconds
-    const pausedAfterSpeech = micOn() && heard && lastHeardAt && now-lastHeardAt>2000;
+    const pausedAfterSpeech = micOn() && heard && lastHeardAt>t0 && now-t0>2500 && now-lastHeardAt>2000;
     if(left<=0||pausedAfterSpeech){check(tok)} else rafId=requestAnimationFrame(tick);
   };
   rafId=requestAnimationFrame(tick);
@@ -598,8 +600,11 @@ function bindCfg(){
 }
 bindCfg(); micNote();
 
+document.addEventListener('keyup',e=>{ if(e.code==='Space' && e.target.matches('button')) e.preventDefault(); },true);
+document.addEventListener('mouseup',e=>{ const b=e.target.closest('button'); if(b) setTimeout(()=>b.blur(),0); });
 document.addEventListener('keydown',e=>{
   if(e.target.matches('input,select,textarea')) return;
+  if(e.repeat) return;
   if(e.code==='Space'){e.preventDefault(); if(S.phase==='done') return; S.running?stop():start()}
   else if(e.key==='r'||e.key==='R'){ if(S.phase!=='done'){S.running=true;playCurrent()} }
   else if(e.key==='ArrowRight') go(1);
