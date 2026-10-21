@@ -92,8 +92,34 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid 
 button:disabled{opacity:.45;cursor:default}
 .primary{background:var(--ink);color:var(--surface);border-color:var(--ink);font-weight:700;padding-inline:20px}
 .primary:hover{border-color:var(--ink)}
-.rate{display:none;gap:8px}
+.rate{display:none;gap:6px;align-items:center;flex-wrap:wrap}
 .rate.on{display:inline-flex}
+.rate button{min-width:40px;min-height:40px;padding:6px 10px;justify-content:center;font-family:var(--mono)}
+.rate button[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.ratelbl{font-size:.85rem;color:var(--muted);margin-right:4px}
+.scorebig{display:inline-flex;align-items:baseline;gap:4px;padding:4px 14px;border-radius:12px;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.scorebig b{font-size:1.8rem;font-weight:500}
+.scorebig span{font-size:.85rem;opacity:.8}
+.scorebig.ok{background:var(--ok-soft);color:var(--ok)}
+.scorebig.mid{background:var(--speak-soft);color:var(--speak)}
+.scorebig.miss{background:var(--miss-soft);color:var(--miss)}
+.rubric{flex:1;min-width:200px;font-size:.95rem}
+.rung.mid .col{background:var(--speak-soft);border-color:var(--speak)}
+.rung .col{display:flex;align-items:flex-start;justify-content:center}
+.cpts{font-family:var(--mono);font-size:.85rem;margin-top:4px}
+.rung.ok .cpts{color:var(--ok)} .rung.mid .cpts{color:var(--speak)} .rung.miss .cpts{color:var(--miss)}
+.total{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:520px){.total{grid-template-columns:minmax(0,1fr)}}
+.total>div{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.total .big{font-family:var(--display);font-weight:700;font-size:2rem;font-variant-numeric:tabular-nums}
+.total .of{color:var(--muted);margin-left:4px}
+.total .cap{font-size:.75rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.scoretable{display:grid;gap:6px}
+.srow{display:grid;grid-template-columns:32px minmax(0,1fr) auto;gap:10px;align-items:center;font-size:.95rem}
+.pts{display:grid;place-items:center;width:32px;height:32px;border-radius:8px;font-family:var(--mono);background:var(--line)}
+.pts.ok{background:var(--ok-soft);color:var(--ok)} .pts.mid{background:var(--speak-soft);color:var(--speak)} .pts.miss{background:var(--miss-soft);color:var(--miss)}
+.swc{font-family:var(--mono);font-size:.75rem;color:var(--muted)}
+.sets button .last{margin-left:auto;font-family:var(--mono);font-size:.7rem;color:var(--muted)}
 .btn-ok{border-color:var(--ok);color:var(--ok)}
 .btn-miss{border-color:var(--miss);color:var(--miss)}
 .btn-speak{border-color:var(--speak);color:var(--speak)}
@@ -141,7 +167,7 @@ select{padding:8px;border-radius:8px;border:1px solid var(--line);background:var
   <header>
     <div>
       <h1>Listen and Repeat Trainer</h1>
-      <p class="sub">Hear a sentence, wait for the tone, then say it back word for word. The trainer listens and shows which words you got right, missed or changed.</p>
+      <p class="sub">Hear a sentence, wait for the tone, then say it back word for word. The trainer listens, marks each word, and scores every sentence from 0 to 5 like the real test.</p>
     </div>
     <div class="kbd"><kbd>Space</kbd> start/stop · <kbd>R</kbd> replay · <kbd>←</kbd><kbd>→</kbd> move</div>
   </header>
@@ -183,8 +209,8 @@ select{padding:8px;border-radius:8px;border:1px solid var(--line);background:var
         <button class="btn-speak" id="doneSpeakBtn" hidden>I'm done speaking</button>
         <span class="spacer"></span>
         <span class="rate" id="rateBox">
-          <button class="btn-ok" id="okBtn">✓ Got it</button>
-          <button class="btn-miss" id="missBtn">✗ Missed words</button>
+          <span class="ratelbl" id="rateLbl">Score yourself:</span>
+          <button data-p="0">0</button><button data-p="1">1</button><button data-p="2">2</button><button data-p="3">3</button><button data-p="4">4</button><button data-p="5">5</button>
         </span>
       </div>
 
@@ -270,8 +296,8 @@ const store = {
 
 const S = {
   mode:{type:'set',idx:store.get('setIdx',0)},
-  queue:[], pos:0, phase:'idle', running:false, marks:[], results:[], token:0, timers:[],
-  done:store.get('doneSets',[]),
+  queue:[], pos:0, phase:'idle', running:false, results:[], token:0, timers:[],
+  done:store.get('doneSets',[]), setScores:store.get('setScores',{}), scores:[],
   cfg:Object.assign({rate:0.95,extra:0,show:'after',auto:true,beep:true,voice:'',mic:true,lang:'en-US'},store.get('cfg',{}))
 };
 const synth = window.speechSynthesis;
@@ -390,15 +416,41 @@ function compare(sentence, said){
   }
   ops.reverse();
   const word=disp.map(()=>({miss:0,sub:[],ok:0})), extras=disp.map(()=>[]), lead=[];
-  let last=-1, okCount=0, subs=0, misses=0, extraN=0;
+  let last=-1, okCount=0, subs=0, misses=0, extraN=0, contentErr=0;
   ops.forEach(o=>{
-    if(o.t==='extra'){extraN++; (last<0?lead:extras[last]).push(o.s); return}
+    if(o.t==='extra'){extraN++; if(!FUNC.has(o.s)) contentErr++; (last<0?lead:extras[last]).push(o.s); return}
     const w=word[owner[o.i]]; last=owner[o.i];
+    if(o.t!=='ok' && !FUNC.has(a[o.i])) contentErr++;
     if(o.t==='ok'){w.ok++;okCount++} else if(o.t==='miss'){w.miss++;misses++} else {w.sub.push(o.s);subs++}
   });
   const status=word.map(w=>w.miss&&!w.ok&&!w.sub.length?{c:'miss'}:w.sub.length||w.miss?{c:'sub',said:w.sub.join(' ')||'—'}:{c:'ok'});
-  return {status,extras,lead,score:n?okCount/n:0,okCount,n,subs,misses,extraN,said,perfect:okCount===n&&!extraN};
+  const r={status,extras,lead,score:n?okCount/n:0,okCount,n,subs,misses,extraN,contentErr,said,perfect:okCount===n&&!extraN};
+  r.points=pointsFor(r);
+  return r;
 }
+
+/* ---------- 0–5 scoring, modelled on the ETS Listen and Repeat scale ---------- */
+// Small "grammar" words. Slips on these count as minor; slips on any other word change the meaning.
+const FUNC=new Set('a an the to of in on at by for with from into onto about as and or but so if than that this these those there their its it is are was were be been being am do does did has have had will would can could should may might must shall not no you your we our they them he she his her him i me my us all any each every some both up out off down over near after before while when where who which what how'.split(' '));
+const RUBRIC={
+  5:'Exact repetition. Every word is there and in the right order.',
+  4:'Meaning kept, with minor slips such as a missed or changed small word. In a long sentence, one content word may be missing.',
+  3:'A full sentence, but one or more content words are missing or changed, so the meaning shifts.',
+  2:'A significant part of the sentence is missing or inaccurate.',
+  1:'Very little of the sentence was captured.',
+  0:'No response, or nothing that matches the sentence.'
+};
+function pointsFor(r){
+  if(!r.said || r.okCount===0) return 0;
+  const errs=r.misses+r.subs+r.extraN, acc=r.okCount/r.n, long=r.n>=12;
+  if(errs===0) return 5;
+  if(errs<=(long?3:2) && (r.contentErr===0 || (long && r.contentErr<=1))) return 4;
+  if(acc>=0.7) return 3;
+  if(acc>=0.35) return 2;
+  return 1;
+}
+const band = avg => Math.max(1, Math.min(6, Math.round((1+avg)*2)/2));
+const tone = p => p==null?'':p>=4?'ok':p===3?'mid':'miss';
 
 /* ---------- timing ---------- */
 const respondSecs = s => Math.min(12,Math.max(8,Math.round(5+wc(s)*0.4))) + S.cfg.extra;
@@ -413,7 +465,7 @@ function loadMode(m){
     const p=POOL[m.tier].slice(); for(let i=p.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[p[i],p[j]]=[p[j],p[i]]}
     S.queue=p.slice(0,7).sort((a,b)=>wc(a)-wc(b));
   }
-  S.marks=S.queue.map(()=>null); S.results=S.queue.map(()=>null);
+  S.scores=S.queue.map(()=>null); S.results=S.queue.map(()=>null);
   render();
 }
 function start(){ S.running=true; playCurrent(); }
@@ -450,20 +502,29 @@ async function check(tok){
   if(usedMic){
     const r=compare(S.queue[S.pos],heard);
     S.results[S.pos]=r;
-    if(heard) S.marks[S.pos]=r.perfect?'ok':'miss';
+    S.scores[S.pos]=r.points;
   }
   S.phase='check'; setRing(1); render();
-  const r=S.results[S.pos];
-  if(S.cfg.auto && S.running) later(()=>advance(), r && !r.perfect ? 7000 : 3500, tok);
+  const p=S.scores[S.pos];
+  // Without the microphone you score yourself, so wait for your click.
+  if(S.cfg.auto && S.running && p!=null) later(()=>advance(), p<5 ? 7000 : 3500, tok);
 }
 function advance(){ S.pos++; if(S.pos>=S.queue.length){finish()} else if(S.running) playCurrent(); else {S.phase='idle';render()} }
 function finish(){
   stopAll(); S.running=false; S.phase='done';
   if(S.mode.type==='set' && !S.done.includes(S.mode.idx)){S.done.push(S.mode.idx);store.set('doneSets',S.done)}
+  if(S.mode.type==='set' && S.scores.every(x=>x!=null)){
+    S.setScores[S.mode.idx]=S.scores.reduce((a,b)=>a+b,0); store.set('setScores',S.setScores);
+  }
   render();
 }
 function go(d){ const n=S.pos+d; if(n<0||n>=S.queue.length) return; S.pos=n; if(S.running) playCurrent(); else {stopAll();S.phase='idle';render()} }
-function mark(v){ S.marks[S.pos]=v; renderLadder(); if(S.phase==='check'){ stopAll(); later(()=>advance(),400,S.token) } }
+function setScore(v){
+  const wasEmpty=S.scores[S.pos]==null;
+  S.scores[S.pos]=v; render();
+  // Self-scoring moves on; correcting an automatic score just changes it.
+  if(S.phase==='check' && wasEmpty && S.running && S.cfg.auto){ stopAll(); later(()=>advance(),600,S.token) }
+}
 
 /* ---------- render ---------- */
 const C=326.7;
@@ -484,11 +545,28 @@ function render(){
   const isDone=S.phase==='done';
   $('doneBox').hidden=!isDone; $('console').hidden=isDone; $('mainControls').hidden=isDone;
   if(isDone){
-    const ok=S.marks.filter(x=>x==='ok').length, miss=S.marks.filter(x=>x==='miss').length;
-    const rs=S.results.filter(r=>r&&r.said);
-    const avg = rs.length ? Math.round(100*rs.reduce((a,r)=>a+r.score,0)/rs.length) : null;
-    $('doneTxt').textContent = (ok+miss ? `${ok} of ${S.queue.length} sentences repeated perfectly.` : 'Try the set again with the sentence hidden until after you speak.')
-      + (avg!=null ? ` Average word accuracy: ${avg}%.` : '') + (miss ? ' Replay the red ones in the chart below until they feel easy.' : '');
+    const sc=S.scores.map(x=>x==null?0:x), total=sc.reduce((a,b)=>a+b,0), max=S.queue.length*5;
+    const avg=total/S.queue.length, unscored=S.scores.filter(x=>x==null).length;
+    const best=S.mode.type==='set'?S.setScores[S.mode.idx]:null;
+    const d=$('doneTxt'); d.innerHTML='';
+    const head=document.createElement('div'); head.className='total';
+    head.innerHTML=`<div><span class="big">${total}</span><span class="of">/ ${max}</span><div class="cap">Listen and Repeat points</div></div>
+      <div><span class="big">${avg.toFixed(1)}</span><span class="of">/ 5</span><div class="cap">Average per sentence</div></div>
+      <div><span class="big">${band(avg).toFixed(1)}</span><span class="of">/ 6</span><div class="cap">Estimated band</div></div>`;
+    d.appendChild(head);
+    const tb=document.createElement('div'); tb.className='scoretable';
+    S.queue.forEach((s,i)=>{
+      const p=S.scores[i], row=document.createElement('div'); row.className='srow';
+      const pill=document.createElement('span'); pill.className='pts '+tone(p); pill.textContent=p==null?'–':p;
+      const tx=document.createElement('span'); tx.className='stext'; tx.textContent=s;
+      const n=document.createElement('span'); n.className='swc'; n.textContent=wc(s)+'w';
+      row.append(pill,tx,n); tb.appendChild(row);
+    });
+    d.appendChild(tb);
+    const note=document.createElement('p'); note.className='tip';
+    note.textContent=(unscored?`${unscored} sentence${unscored>1?'s were':' was'} not scored and counted as 0. `:'')
+      +'The band is a rough guide. On the real test, these seven scores are combined with your Take an Interview scores to give one Speaking band.';
+    d.appendChild(note);
     $('nextSetBtn').textContent = m.type==='set' ? 'Next set →' : 'New drill →';
   }
   if(S.phase!=='respond'){ $('ringNum').textContent=Math.min(S.pos+1,S.queue.length); $('ringSub').textContent='of '+S.queue.length; }
@@ -518,18 +596,22 @@ function render(){
   const listening = (S.phase==='respond'||S.phase==='checking') && micOn();
   $('live').hidden = !listening;
   const v=$('verdict'); v.innerHTML='';
-  v.hidden = !(S.phase==='check' && res);
-  if(S.phase==='check' && res){
-    const pct=Math.round(res.score*100);
-    let cls, txt;
-    if(!res.said){cls='bad';txt="I didn't hear anything. Check that your microphone is on and speak a little louder."}
-    else if(res.perfect){cls='ok';txt='Perfect repeat.'}
-    else if(res.score>=0.85){cls='mid';txt=summary(res)}
-    else {cls='bad';txt=summary(res)}
-    const chip=document.createElement('span'); chip.className='chip '+cls; chip.textContent=res.said?`${res.okCount}/${res.n} words · ${pct}%`:'No speech';
-    const t=document.createElement('span'); t.textContent=txt;
-    v.append(chip,t);
-    if(res.said){const sd=document.createElement('div');sd.className='said';sd.style.flexBasis='100%';sd.innerHTML='You said: <b></b>';sd.querySelector('b').textContent=res.said;v.appendChild(sd)}
+  const p=S.scores[S.pos];
+  v.hidden = !(S.phase==='check' && (res || p!=null));
+  if(S.phase==='check' && (res || p!=null)){
+    if(p!=null){
+      const big=document.createElement('span'); big.className='scorebig '+tone(p);
+      big.innerHTML=`<b>${p}</b><span>/ 5</span>`;
+      const rb=document.createElement('span'); rb.className='rubric'; rb.textContent=RUBRIC[p];
+      v.append(big,rb);
+    }
+    if(res){
+      const st=document.createElement('div'); st.className='said'; st.style.flexBasis='100%';
+      if(!res.said) st.textContent="I didn't hear anything. Check that your microphone is on and speak a little louder.";
+      else { st.textContent=`${res.okCount} of ${res.n} words matched. ${summary(res)} `;
+        const b=document.createElement('span'); b.innerHTML='You said: <b></b>'; b.querySelector('b').textContent=res.said; st.appendChild(b); }
+      v.appendChild(st);
+    }
   }
 
   $('playBtn').textContent = S.running ? '■ Stop' : (S.pos>0 ? '▶ Continue' : '▶ Start');
@@ -537,6 +619,8 @@ function render(){
   $('prevBtn').disabled = S.pos===0; $('nextBtn').disabled = S.pos>=S.queue.length-1;
   $('doneSpeakBtn').hidden = !(S.phase==='respond' && micOn());
   $('rateBox').classList.toggle('on', S.phase==='check');
+  $('rateLbl').textContent = S.scores[S.pos]==null ? 'Score yourself:' : 'Change score:';
+  [...$('rateBox').querySelectorAll('button')].forEach(b=>b.setAttribute('aria-pressed', String(+b.dataset.p===S.scores[S.pos])));
   renderLadder(); renderPickers();
 }
 function summary(r){
@@ -544,7 +628,7 @@ function summary(r){
   if(r.misses) parts.push(`${r.misses} missed`);
   if(r.subs) parts.push(`${r.subs} changed`);
   if(r.extraN) parts.push(`${r.extraN} extra`);
-  return (r.score>=0.85?'Close. ':'Keep practicing. ')+parts.join(', ')+(parts.length?' word'+(r.misses+r.subs+r.extraN>1?'s':'')+'.':'');
+  return parts.length ? parts.join(', ')+'.' : '';
 }
 function renderLadder(){
   const L=$('ladder'); L.innerHTML='';
@@ -552,10 +636,10 @@ function renderLadder(){
   S.queue.forEach((s,i)=>{
     const b=document.createElement('button'); b.className='rung';
     if(i===S.pos && S.phase!=='done') b.classList.add('cur');
-    if(S.marks[i]) b.classList.add(S.marks[i]);
-    b.setAttribute('aria-label',`Sentence ${i+1}, ${wc(s)} words`);
-    const r=S.results[i];
-    b.innerHTML=`<span class="col" style="height:${Math.round(18+62*wc(s)/max)}px"></span><span class="lbl">${r&&r.said?Math.round(r.score*100)+'%':wc(s)+'w'}</span>`;
+    const p=S.scores[i];
+    if(p!=null) b.classList.add(tone(p));
+    b.setAttribute('aria-label',`Sentence ${i+1}, ${wc(s)} words`+(p!=null?`, score ${p} of 5`:''));
+    b.innerHTML=`<span class="col" style="height:${Math.round(18+62*wc(s)/max)}px">${p!=null?`<span class="cpts">${p}</span>`:''}</span><span class="lbl">${wc(s)}w</span>`;
     b.onclick=()=>{S.pos=i; if(S.phase==='done')S.phase='idle'; if(S.running) playCurrent(); else {stopAll();S.phase='idle';render()}};
     L.appendChild(b);
   });
@@ -569,6 +653,8 @@ function renderPickers(){
     b.setAttribute('aria-pressed',S.mode.type==='set'&&S.mode.idx===i);
     b.classList.toggle('done-set',S.done.includes(i));
     b.querySelector('.n').textContent = S.done.includes(i)?'✓':i+1;
+    let t=b.querySelector('.last'); const v=S.setScores[i];
+    if(v!=null){ if(!t){t=document.createElement('span');t.className='last';b.appendChild(t)} t.textContent=v+'/35'; t.title='Last score'; }
   });
   document.querySelectorAll('#drills button').forEach(b=>b.setAttribute('aria-pressed',S.mode.type==='drill'&&S.mode.tier===b.dataset.tier));
 }
@@ -577,7 +663,7 @@ function renderPickers(){
 $('playBtn').onclick=()=>S.running?stop():start();
 $('replayBtn').onclick=()=>{ if(S.phase==='done')return; S.running=true; playCurrent(); };
 $('prevBtn').onclick=()=>go(-1); $('nextBtn').onclick=()=>go(1);
-$('okBtn').onclick=()=>mark('ok'); $('missBtn').onclick=()=>mark('miss');
+$('rateBox').querySelectorAll('button').forEach(b=>b.onclick=()=>setScore(+b.dataset.p));
 $('doneSpeakBtn').onclick=()=>check(S.token);
 $('againBtn').onclick=()=>{loadMode(S.mode);start()};
 $('nextSetBtn').onclick=()=>{ if(S.mode.type==='set') loadMode({type:'set',idx:(S.mode.idx+1)%SETS.length}); else loadMode(S.mode); start(); };
