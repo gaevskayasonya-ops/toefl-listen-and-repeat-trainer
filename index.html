@@ -484,54 +484,98 @@ function compare(sentence, said){
   const disp=sentence.split(/\s+/), a=[], owner=[];
   disp.forEach((w,i)=>norm(w).forEach(t=>{a.push(t);owner.push(i)}));
   const b=norm(said), n=a.length, m=b.length;
+  // Edit distance that also knows about two neighbouring words being swapped.
   const dp=Array.from({length:n+1},(_,i)=>Array(m+1).fill(0));
   for(let i=0;i<=n;i++)dp[i][0]=i; for(let j=0;j<=m;j++)dp[0][j]=j;
-  for(let i=1;i<=n;i++)for(let j=1;j<=m;j++)
+  for(let i=1;i<=n;i++)for(let j=1;j<=m;j++){
     dp[i][j]=Math.min(dp[i-1][j]+1,dp[i][j-1]+1,dp[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+    if(i>1&&j>1&&a[i-1]===b[j-2]&&a[i-2]===b[j-1]&&a[i-1]!==a[i-2]) dp[i][j]=Math.min(dp[i][j],dp[i-2][j-2]+1);
+  }
   const ops=[]; let i=n,j=m;
   while(i>0||j>0){
     if(i>0&&j>0&&a[i-1]===b[j-1]&&dp[i][j]===dp[i-1][j-1]){ops.push({t:'ok',i:i-1});i--;j--}
+    else if(i>1&&j>1&&a[i-1]===b[j-2]&&a[i-2]===b[j-1]&&a[i-1]!==a[i-2]&&dp[i][j]===dp[i-2][j-2]+1){ops.push({t:'swap',i:i-1},{t:'swap',i:i-2});i-=2;j-=2}
     else if(i>0&&j>0&&dp[i][j]===dp[i-1][j-1]+1){ops.push({t:'sub',i:i-1,s:b[j-1]});i--;j--}
     else if(i>0&&dp[i][j]===dp[i-1][j]+1){ops.push({t:'miss',i:i-1});i--}
-    else {ops.push({t:'extra',s:b[j-1]});j--}
+    else {ops.push({t:'extra',s:b[j-1],j:j-1});j--}
   }
   ops.reverse();
-  const word=disp.map(()=>({miss:0,sub:[],ok:0})), extras=disp.map(()=>[]), lead=[];
-  let last=-1, okCount=0, subs=0, misses=0, extraN=0, contentErr=0;
-  ops.forEach(o=>{
-    if(o.t==='extra'){extraN++; if(!FUNC.has(o.s)) contentErr++; (last<0?lead:extras[last]).push(o.s); return}
-    const w=word[owner[o.i]]; last=owner[o.i];
-    if(o.t!=='ok' && !FUNC.has(a[o.i]) && !(o.t==='sub' && endingOnly(a[o.i],o.s))) contentErr++;
-    if(o.t==='ok'){w.ok++;okCount++} else if(o.t==='miss'){w.miss++;misses++} else {w.sub.push(o.s);subs++}
+  const word=disp.map(()=>({miss:0,sub:[],ok:0,swap:0})), extras=disp.map(()=>[]), lead=[];
+  const c={func:0,ending:0,related:0,swap:0,repeat:0,contentMiss:0,contentChanged:0};
+  let last=-1, okCount=0, subs=0, misses=0, extraN=0, contentHit=0, contentTotal=0, tailMiss=0;
+  a.forEach(t=>{ if(!FUNC.has(t)) contentTotal++ });
+  ops.forEach((o,k)=>{
+    if(o.t==='extra'){
+      extraN++;
+      // Saying a word twice or restarting it ("the the", "lab laboratory") is a self-correction.
+      const near=[a[ops.slice(0,k).filter(x=>x.t!=='extra').length-1], a[ops.slice(0,k).filter(x=>x.t!=='extra').length]];
+      if(near.some(x=>x&&(x===o.s||x.startsWith(o.s)||o.s===b[o.j+1]))) c.repeat++;
+      else if(FUNC.has(o.s)) c.func++; else c.contentChanged++;
+      (last<0?lead:extras[last]).push(o.s); return;
+    }
+    const t=a[o.i], isFunc=FUNC.has(t), w=word[owner[o.i]]; last=owner[o.i];
+    if(o.t==='ok'){ w.ok++; okCount++; if(!isFunc) contentHit++; return }
+    if(o.t==='swap'){ w.swap++; okCount++; if(!isFunc) contentHit++; if(a[o.i+1]!==undefined && ops[k+1]&&ops[k+1].t==='swap') c.swap++; return }
+    if(o.t==='miss'){ w.miss++; misses++; if(isFunc) c.func++; else c.contentMiss++; return }
+    subs++; w.sub.push(o.s);
+    if(endingOnly(t,o.s)){ c.ending++; if(!isFunc) contentHit++ }
+    else if(related(t,o.s)){ c.related++; if(!isFunc) contentHit++ }
+    else if(isFunc) c.func++;
+    else c.contentChanged++;
   });
-  const status=word.map(w=>w.miss&&!w.ok&&!w.sub.length?{c:'miss'}:w.sub.length||w.miss?{c:'sub',said:w.sub.join(' ')||'—'}:{c:'ok'});
-  const r={status,extras,lead,score:n?okCount/n:0,okCount,n,subs,misses,extraN,contentErr,said,perfect:okCount===n&&!extraN};
-  r.points=pointsFor(r);
+  // How many words at the end were dropped: "repeats the first part, then stops".
+  for(let k=ops.length-1;k>=0&&ops[k].t!=='ok';k--) if(ops[k].t==='miss') tailMiss++;
+  const status=word.map(w=>w.miss&&!w.ok&&!w.sub.length&&!w.swap?{c:'miss'}
+    :w.swap&&!w.sub.length&&!w.miss?{c:'sub',said:'swapped'}
+    :w.sub.length||w.miss?{c:'sub',said:w.sub.join(' ')||'—'}:{c:'ok'});
+  const r={status,extras,lead,score:n?okCount/n:0,okCount,n,subs,misses,extraN,counts:c,contentHit,contentTotal,tailMiss,said,
+    perfect:okCount===n&&!extraN&&!c.swap};
+  [r.points,r.reason]=pointsFor(r);
   return r;
 }
 
-/* ---------- 0–5 scoring, modelled on the ETS Listen and Repeat scale ---------- */
-// Small "grammar" words. Slips on these count as minor; slips on any other word change the meaning.
-const FUNC=new Set('a an the to of in on at by for with from into onto about as and or but so if than that this these those there their its it is are was were be been being am do does did has have had will would can could should may might must shall not no you your we our they them he she his her him i me my us all any each every some both up out off down over near after before while when where who which what how'.split(' '));
-// "school" for "school's", "use" for "used": only a grammar ending differs, so it is a minor slip.
-function endingOnly(x,y){ const [s,l]=x.length<y.length?[x,y]:[y,x]; return s.length>=3 && ['s','es','d','ed'].some(e=>s+e===l) }
+/* ---------- 0–5 scoring, following the ETS Listen and Repeat scoring guide ---------- */
+// Function words: articles, prepositions, pronouns, auxiliaries, conjunctions.
+const FUNC=new Set('a an the to of in on at by for with from into onto about as and or but so if than that this these those there their its it is are was were be been being am do does did has have had will would can could should may might must shall not no you your we our they them he she his her him i me my us all any each every some both up out off down over near after before while when where who which what how dont doesnt didnt isnt arent wasnt cant wont youre were theyre its thats theres lets'.split(' '));
+// Tense/number markers: "school" for "school's", "use" for "used".
+function endingOnly(x,y){ const [s,l]=x.length<y.length?[x,y]:[y,x]; return s.length>=3 && ['s','es','d','ed','ing'].some(e=>s+e===l||(s.endsWith('e')&&s.slice(0,-1)+e===l)) }
+// Related words that keep the meaning.
+const REL=[['everyone','everybody'],['someone','somebody'],['anyone','anybody'],['no one','nobody'],['lab','laboratory'],['until','till'],['toward','towards'],['ok','okay'],['photo','photograph'],['phone','telephone'],['tv','television'],['fridge','refrigerator'],['big','large'],['start','begin'],['starting','beginning'],['near','close'],['shop','store'],['quickly','fast'],['also','too']];
+function related(x,y){ return REL.some(p=>p.includes(x)&&p.includes(y)) }
 const RUBRIC={
-  5:'Exact repetition. Every word is there and in the right order.',
-  4:'Meaning kept, with minor slips such as a missed or changed small word. In a long sentence, one content word may be missing.',
-  3:'A full sentence, but one or more content words are missing or changed, so the meaning shifts.',
-  2:'A significant part of the sentence is missing or inaccurate.',
-  1:'Very little of the sentence was captured.',
-  0:'No response, or nothing that matches the sentence.'
+  5:'A fully successful response: an exact repetition of the sentence, fully intelligible.',
+  4:'A generally successful response: the meaning is captured, with minor changes. One or two function words missing or changed, a tense or plural ending wrong, two words swapped, a content word replaced with a related word, or one content word missing in a longer sentence.',
+  3:'A partially successful response: essentially full, with most of the content words, but content words are missing or changed, so the original meaning is not accurately captured.',
+  2:'A mostly unsuccessful response: a large part of the sentence is missing and important meaning is left out, for example the first part is repeated and the rest is dropped.',
+  1:'An unsuccessful response: only a few words were captured and most of the sentence is missing.',
+  0:'No response, or nothing connected to the sentence.'
 };
 function pointsFor(r){
-  if(!r.said || r.okCount===0) return 0;
-  const errs=r.misses+r.subs+r.extraN, acc=r.okCount/r.n, long=r.n>=12;
-  if(errs===0) return 5;
-  if(errs<=(long?3:2) && (r.contentErr===0 || (long && r.contentErr<=1))) return 4;
-  if(acc>=0.7) return 3;
-  if(acc>=0.35) return 2;
-  return 1;
+  const c=r.counts, n=r.n, ct=r.contentTotal||1, long=n>=12;
+  const contentShare=r.contentHit/ct, missShare=r.misses/n;
+  const parts=[];
+  if(c.func) parts.push(`${c.func} function word${c.func>1?'s':''}`);
+  if(c.ending) parts.push(`${c.ending} ending${c.ending>1?'s':''}`);
+  if(c.related) parts.push(`${c.related} related word${c.related>1?'s':''}`);
+  if(c.swap) parts.push(`${c.swap} swap${c.swap>1?'s':''}`);
+  if(c.repeat) parts.push(`${c.repeat} self-correction${c.repeat>1?'s':''}`);
+  if(c.contentMiss) parts.push(`${c.contentMiss} content word${c.contentMiss>1?'s':''} missing`);
+  if(c.contentChanged) parts.push(`${c.contentChanged} content word${c.contentChanged>1?'s':''} changed`);
+  const why=parts.length?'Found: '+parts.join(', ')+'.':'';
+  if(!r.said) return [0,''];
+  if(r.contentHit===0 && r.contentTotal>0) return [0,'None of the content words were heard.'];
+  if(r.perfect) return [5,''];
+  const minor = c.func<=2 && c.ending<=2 && c.related<=1 && c.swap<=1
+    && c.contentChanged===0 && (c.contentMiss===0 || (long && c.contentMiss===1))
+    && (c.func+c.ending+c.related+c.swap+c.contentMiss)<=3;
+  if(minor) return [4,why];
+  const stoppedEarly = r.tailMiss>=3 && r.tailMiss/n>=0.25;
+  if(contentShare>0.5 && missShare<=0.3 && !stoppedEarly) return [3,why];
+  if(contentShare>=0.4 && r.okCount/n>=0.4) return [2,why+(stoppedEarly?` The last ${r.tailMiss} words were dropped.`:'')];
+  return [1,why];
 }
+// Intelligibility, from the recognizer's confidence: 5 needs fully intelligible speech.
+function intelligibilityCap(conf){ if(conf==null) return 5; if(conf<0.4) return 2; if(conf<0.6) return 3; if(conf<0.75) return 4; return 5 }
 const band = avg => Math.max(1, Math.min(6, Math.round((1+avg)*2)/2));
 const tone = p => p==null?'':p>=4?'ok':p===3?'mid':'miss';
 
@@ -596,8 +640,9 @@ async function check(tok){
     const r=compare(S.queue[S.pos],heard);
     r.delivery=delivery(heard);
     r.final=r.points;
-    // Real raters need the answer to be fully intelligible for a 5 or 4.
-    if(r.delivery && r.delivery.points<=2 && r.final>=4){ r.final-=1; r.lowered=true }
+    // The guide ties 5, 4 and 3 to how intelligible the speech is.
+    const cap=intelligibilityCap(r.delivery?r.delivery.conf:null);
+    if(r.final>cap){ r.lowered=r.final; r.final=cap }
     S.results[S.pos]=r;
     S.scores[S.pos]=r.final;
   }
@@ -717,7 +762,7 @@ function render(){
     if(res && res.said){
       const sub=document.createElement('div'); sub.className='subscores';
       sub.innerHTML=`<span>Words <b>${res.points}</b>/5</span>`+(res.delivery?`<span>Delivery <b>${res.delivery.points}</b>/5</span>`:'');
-      if(res.lowered){const l=document.createElement('span');l.className='lowered';l.textContent=`Lowered from ${res.points} because the speech was hard to understand.`;sub.appendChild(l)}
+      if(res.lowered){const l=document.createElement('span');l.className='lowered';l.textContent=`Lowered from ${res.points}: the recognizer had trouble understanding you (${Math.round(res.delivery.conf*100)}% confidence).`;sub.appendChild(l)}
       v.appendChild(sub);
     }
     if(res && res.delivery){
@@ -735,7 +780,7 @@ function render(){
     if(res){
       const st=document.createElement('div'); st.className='said'; st.style.flexBasis='100%';
       if(!res.said) st.textContent="I didn't hear anything. Check that your microphone is on and speak a little louder.";
-      else { st.textContent=`${res.okCount} of ${res.n} words matched. ${summary(res)} `;
+      else { st.textContent=`${res.okCount} of ${res.n} words matched. ${res.reason||''} `;
         const b=document.createElement('span'); b.innerHTML='You said: <b></b>'; b.querySelector('b').textContent=res.said; st.appendChild(b); }
       v.appendChild(st);
     }
