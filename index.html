@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>[hidden]{display:none!important}img{max-width:100%}body{margin:0}</style></head><body>
+<title>Listen and Repeat Trainer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: a language-lab console — one stage card with a phase light, a sentence-length ladder under it, set picker beside it. */
+:root{
+  --bg:#EDF0EC; --surface:#FAFBF8; --ink:#17212B; --muted:#596470; --line:#D3D9D3;
+  --listen:#2B5DA8; --listen-soft:#DCE6F5;
+  --speak:#B95F0A; --speak-soft:#F7E3CC;
+  --ok:#2E7D4F; --ok-soft:#D7EEDF; --miss:#B3452F; --miss-soft:#F5DCD5;
+  --display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body:"Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --mono:"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#10151A; --surface:#172028; --ink:#E6EBEE; --muted:#93A0AB; --line:#2A353F;
+  --listen:#86AEEB; --listen-soft:#1D2C43; --speak:#F0A456; --speak-soft:#3A2916;
+  --ok:#6CC596; --ok-soft:#173326; --miss:#EE8A73; --miss-soft:#3D1F18; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#10151A; --surface:#172028; --ink:#E6EBEE; --muted:#93A0AB; --line:#2A353F;
+  --listen:#86AEEB; --listen-soft:#1D2C43; --speak:#F0A456; --speak-soft:#3A2916;
+  --ok:#6CC596; --ok-soft:#173326; --miss:#EE8A73; --miss-soft:#3D1F18; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.5;
+  padding-left:max(16px, env(safe-area-inset-left,0px));padding-right:max(16px, env(safe-area-inset-right,0px));padding-block:24px 48px}
+.wrap{max-width:1080px;margin:0 auto;display:grid;gap:24px}
+header{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:12px}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(1.6rem,4vw,2.2rem);line-height:1.1;margin:0;text-wrap:balance}
+.sub{color:var(--muted);margin:4px 0 0;max-width:60ch}
+.kbd{font-family:var(--mono);font-size:.75rem;color:var(--muted)}
+kbd{font-family:var(--mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;background:var(--surface)}
+
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:24px;align-items:start}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+
+.stage{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:clamp(18px,3vw,28px);display:grid;gap:22px;min-width:0}
+.stage-top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.settitle{font-family:var(--display);font-weight:600;font-size:1.15rem}
+.settitle small{display:block;font-family:var(--body);font-size:.8rem;color:var(--muted);font-weight:400;letter-spacing:.06em;text-transform:uppercase}
+
+.phase{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:.78rem;letter-spacing:.12em;text-transform:uppercase;padding:6px 12px;border-radius:999px;background:var(--bg);color:var(--muted)}
+.phase .dot{width:9px;height:9px;border-radius:50%;background:currentColor}
+.phase[data-p="listen"]{background:var(--listen-soft);color:var(--listen)}
+.phase[data-p="respond"]{background:var(--speak-soft);color:var(--speak)}
+.phase[data-p="check"]{background:var(--ok-soft);color:var(--ok)}
+.phase[data-p="listen"] .dot,.phase[data-p="respond"] .dot{animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}
+
+.console{display:grid;grid-template-columns:auto minmax(0,1fr);gap:24px;align-items:center}
+@media (max-width:520px){.console{grid-template-columns:minmax(0,1fr);justify-items:center;text-align:center}}
+.ring{width:120px;height:120px;position:relative;flex:none}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:8}
+.ring .track{stroke:var(--line)}
+.ring .bar{stroke:var(--muted);stroke-linecap:round;transition:stroke .2s}
+.ring[data-p="listen"] .bar{stroke:var(--listen)}
+.ring[data-p="respond"] .bar{stroke:var(--speak)}
+.ring[data-p="check"] .bar{stroke:var(--ok)}
+.ring .num{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--mono);font-size:1.9rem;font-variant-numeric:tabular-nums}
+.ring .num small{display:block;font-size:.65rem;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:-6px}
+
+.sentence{font-family:var(--display);font-weight:500;font-size:clamp(1.25rem,2.6vw,1.65rem);line-height:1.45;min-height:3.2em;display:flex;flex-wrap:wrap;gap:.18em .32em;align-content:center;align-items:baseline}
+@media (max-width:520px){.sentence{justify-content:center}}
+.w{display:inline-block}
+.slot{display:inline-block;height:.55em;border-radius:4px;background:var(--line);align-self:center}
+.w.d-ok{color:var(--ok)}
+.w.d-miss{color:var(--miss);text-decoration:line-through;text-decoration-thickness:2px;opacity:.85}
+.w.d-sub{color:var(--speak);display:inline-flex;flex-direction:column;align-items:center;line-height:1.15}
+.w.d-sub small,.w.d-extra{font-family:var(--body);font-size:.6em;color:var(--miss);font-weight:400}
+.w.d-sub small::before{content:"you said: "}
+.w.d-extra::before{content:"+"}
+.meta{color:var(--muted);font-size:.9rem;margin-top:6px}
+.live{font-size:.95rem;color:var(--ink);margin-top:8px;min-height:1.5em;font-style:italic}
+.live:empty::before{content:"Listening for your voice…";color:var(--muted)}
+.verdict{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-top:10px;font-size:.95rem}
+.chip{font-family:var(--mono);font-size:.78rem;padding:4px 10px;border-radius:999px;font-variant-numeric:tabular-nums}
+.chip.ok{background:var(--ok-soft);color:var(--ok)}
+.chip.mid{background:var(--speak-soft);color:var(--speak)}
+.chip.bad{background:var(--miss-soft);color:var(--miss)}
+.said{color:var(--muted)}
+.said b{color:var(--ink);font-weight:400}
+
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+button{font:inherit;cursor:pointer;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 14px;display:inline-flex;align-items:center;gap:8px;min-height:44px}
+button:hover{border-color:var(--muted)}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--listen);outline-offset:2px}
+button:disabled{opacity:.45;cursor:default}
+.primary{background:var(--ink);color:var(--surface);border-color:var(--ink);font-weight:700;padding-inline:20px}
+.primary:hover{border-color:var(--ink)}
+.rate{display:none;gap:8px}
+.rate.on{display:inline-flex}
+.btn-ok{border-color:var(--ok);color:var(--ok)}
+.btn-miss{border-color:var(--miss);color:var(--miss)}
+.btn-speak{border-color:var(--speak);color:var(--speak)}
+.spacer{flex:1}
+
+.ladder{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;align-items:end}
+.rung{display:grid;gap:6px;justify-items:center;background:none;border:0;padding:0;min-height:0;border-radius:6px}
+.rung .col{width:100%;border-radius:6px 6px 3px 3px;background:var(--bg);border:1px solid var(--line);transition:background .2s}
+.rung.cur .col{background:var(--listen-soft);border-color:var(--listen)}
+.rung.ok .col{background:var(--ok-soft);border-color:var(--ok)}
+.rung.miss .col{background:var(--miss-soft);border-color:var(--miss)}
+.rung .lbl{font-family:var(--mono);font-size:.7rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.rung.cur .lbl{color:var(--ink)}
+.ladder-cap{display:flex;justify-content:space-between;font-size:.75rem;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-top:-12px}
+
+.done{display:grid;gap:12px;padding:16px;border-radius:10px;background:var(--bg)}
+.done h3{margin:0;font-family:var(--display)}
+
+aside{display:grid;gap:20px;min-width:0}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:grid;gap:14px}
+.panel h2{font-family:var(--display);font-size:1rem;margin:0}
+.lab{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.drills{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.drills button{flex-direction:column;gap:0;padding:8px;font-size:.9rem}
+.drills button span{font-size:.7rem;color:var(--muted);font-family:var(--mono)}
+.sets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;max-height:360px;overflow:auto;padding-right:2px}
+.sets button{justify-content:flex-start;font-size:.85rem;padding:8px 10px;min-height:40px;text-align:left;line-height:1.2}
+.sets button .n{font-family:var(--mono);font-size:.72rem;color:var(--muted);min-width:2ch}
+.sets button.done-set .n{color:var(--ok)}
+.sets button[aria-pressed="true"],.drills button[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.field{display:grid;gap:6px}
+select,input[type=range]{width:100%;font:inherit}
+select{padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:.92rem}
+.row output{font-family:var(--mono);font-size:.8rem;color:var(--muted)}
+.check{display:flex;gap:10px;align-items:center;font-size:.92rem}
+.check input{width:18px;height:18px;accent-color:var(--ink)}
+.warn{background:var(--miss-soft);color:var(--miss);border-radius:10px;padding:12px;font-size:.92rem}
+.note{background:var(--speak-soft);color:var(--ink);border-radius:10px;padding:12px 14px;font-size:.92rem}
+.tip{font-size:.88rem;color:var(--muted);margin:0}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Listen and Repeat Trainer</h1>
+      <p class="sub">Hear a sentence, wait for the tone, then say it back word for word. The trainer listens and shows which words you got right, missed or changed.</p>
+    </div>
+    <div class="kbd"><kbd>Space</kbd> start/stop · <kbd>R</kbd> replay · <kbd>←</kbd><kbd>→</kbd> move</div>
+  </header>
+
+  <div class="grid">
+    <section class="stage" aria-live="polite">
+      <div class="stage-top">
+        <div class="settitle" id="setTitle"></div>
+        <div class="phase" id="phase" data-p="idle"><span class="dot"></span><span id="phaseTxt">Ready</span></div>
+      </div>
+
+      <div id="warn" class="warn" hidden>This browser can't speak text aloud. Open the page in Chrome, Edge or Safari to hear the sentences.</div>
+      <div id="micNote" class="note" hidden></div>
+
+      <div class="console" id="console">
+        <div class="ring" id="ring" data-p="idle">
+          <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="track" cx="60" cy="60" r="52"/><circle class="bar" id="ringBar" cx="60" cy="60" r="52" stroke-dasharray="326.7" stroke-dashoffset="0"/></svg>
+          <div class="num"><div><span id="ringNum">1</span><small id="ringSub">of 7</small></div></div>
+        </div>
+        <div style="min-width:0">
+          <div class="sentence" id="sentence"></div>
+          <div class="meta" id="meta"></div>
+          <div class="live" id="live" hidden></div>
+          <div class="verdict" id="verdict" hidden></div>
+        </div>
+      </div>
+
+      <div id="doneBox" class="done" hidden>
+        <h3>Set finished</h3>
+        <div id="doneTxt"></div>
+        <div class="controls"><button id="againBtn">Do this set again</button><button class="primary" id="nextSetBtn">Next set →</button></div>
+      </div>
+
+      <div class="controls" id="mainControls">
+        <button class="primary" id="playBtn">▶ Start</button>
+        <button id="replayBtn" title="Replay this sentence (R)">↺ Replay</button>
+        <button id="prevBtn" title="Previous (←)" aria-label="Previous sentence">←</button>
+        <button id="nextBtn" title="Next (→)" aria-label="Next sentence">→</button>
+        <button class="btn-speak" id="doneSpeakBtn" hidden>I'm done speaking</button>
+        <span class="spacer"></span>
+        <span class="rate" id="rateBox">
+          <button class="btn-ok" id="okBtn">✓ Got it</button>
+          <button class="btn-miss" id="missBtn">✗ Missed words</button>
+        </span>
+      </div>
+
+      <div class="ladder" id="ladder"></div>
+      <div class="ladder-cap"><span>Short</span><span>Words per sentence</span><span>Long</span></div>
+    </section>
+
+    <aside>
+      <div class="panel">
+        <h2>Practice by length</h2>
+        <p class="tip">Seven random sentences from all sets, at one length.</p>
+        <div class="drills" id="drills">
+          <button data-tier="short">Short<span>5–9 words</span></button>
+          <button data-tier="medium">Medium<span>9–13 words</span></button>
+          <button data-tier="long">Long<span>13+ words</span></button>
+        </div>
+        <div class="lab">Full sets</div>
+        <div class="sets" id="sets"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Settings</h2>
+        <label class="check"><input type="checkbox" id="micIn"> Check my speech with the microphone</label>
+        <div class="field"><label class="lab" for="langSel">Recognize my speech as</label>
+          <select id="langSel"><option value="en-US">English (US)</option><option value="en-GB">English (UK)</option><option value="en-AU">English (Australia)</option><option value="en-CA">English (Canada)</option></select></div>
+        <div class="field"><label class="lab" for="voiceSel">Voice</label><select id="voiceSel"></select></div>
+        <div class="field">
+          <div class="row"><label for="rateIn">Speaking speed</label><output id="rateOut"></output></div>
+          <input type="range" id="rateIn" min="0.7" max="1.2" step="0.05">
+        </div>
+        <div class="field">
+          <div class="row"><label for="extraIn">Extra time to repeat</label><output id="extraOut"></output></div>
+          <input type="range" id="extraIn" min="0" max="8" step="1">
+        </div>
+        <div class="field">
+          <label class="lab" for="showSel">Show the sentence</label>
+          <select id="showSel">
+            <option value="after">After I repeat it (exam style)</option>
+            <option value="always">While it plays</option>
+            <option value="never">Never, just the length</option>
+          </select>
+        </div>
+        <label class="check"><input type="checkbox" id="autoIn"> Go to the next sentence automatically</label>
+        <label class="check"><input type="checkbox" id="beepIn"> Play a tone before I speak</label>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+const SETS = [
+ ["Office kitchen",["Welcome to our office kitchen and break area.","You can store your lunch inside the refrigerator.","Please label your food so everyone knows who it belongs to.","The coffee maker and microwave are available for everyone to use.","Remember to clean up after yourself and leave the counters tidy.","We keep extra cups and utensils in the cabinets above the sink.","At the end of the day, check that all appliances are turned off and the trash has been taken out."]],
+ ["Science lab",["This is our school's science laboratory.","Each workstation is equipped with a sink and supplies.","Please keep your bags and books away from the lab tables.","Safety goggles and gloves are stored in the cabinet near the door.","Before starting an experiment, make sure all equipment is clean and ready to use.","Never eat or drink inside the lab, even when no experiments are being performed.","When class ends, turn off the gas burners and leave your station tidy for the next group."]],
+ ["Shared office",["This is our shared office space.","You can choose any open desk to work at.","The whiteboard area is used for team discussions and planning.","Please keep your conversations quiet while others are working nearby.","Coffee and snacks are available in the lounge behind the glass doors.","We often hold short brainstorming sessions in the afternoons to share ideas.","Feel free to collaborate with others, but remember to schedule meeting times so everyone can stay focused."]],
+ ["Cafeteria",["This is the main cafeteria on campus.","You can order food at the counter near the back.","The salad bar and dessert section are along the side wall.","Please return your dishes and trays after finishing your meal.","During busy hours, try to share tables so everyone has a place to sit.","Many students like to study here because the space stays open until midnight.","If you are looking for vegetarian options, check the daily menu posted near the entrance."]],
+ ["Library",["Welcome to the main library on campus.","The front desk is where you can borrow and return books.","Study tables are available on both the first and second floors.","Please keep your voice down so others can concentrate.","Computers in the basement are connected to the library database for research.","If you need help finding a book, ask the librarian at the desk for assistance.","Group study rooms can be reserved online, allowing students to collaborate without disturbing others."]],
+ ["Fitness center",["This is the campus fitness center.","You need your student ID to enter the building.","The weight room is located on the lower level.","Please wipe down each machine after you finish using it.","Towels are provided at the front desk, but you must return them.","Group exercise classes are held in the studio every weekday morning and evening.","If you are new to the equipment, book a free session with a trainer before starting your workout."]],
+ ["Residence lounge",["Welcome to the residence hall lounge.","Residents can use this room at any time.","The television and game tables are shared by everyone.","Please keep the noise down after ten o'clock at night.","The laundry room is just down the hall next to the elevator.","If something in the lounge is broken, report it to your resident advisor right away.","Floor meetings are held here once a month, so check the bulletin board for the next date."]],
+ ["Bookstore",["This is the university bookstore.","Textbooks are arranged by department and course number.","You can also buy notebooks, pens, and other school supplies here.","Used books are cheaper, but they sell out quickly each semester.","Bring your receipt if you need to return a book within two weeks.","During the first week of classes, the lines at the registers can be very long.","To save time, you can order your books online and pick them up at the counter near the entrance."]],
+ ["Health center",["This is the student health center.","Please check in at the reception desk first.","Appointments can be made by phone or through the student portal.","Nurses are available to answer basic health questions every weekday.","Bring your insurance card and a list of any medications you take.","If you feel sick outside of office hours, you can call the after-hours advice line.","Free flu shots are offered every fall, and students can get one without making an appointment."]],
+ ["Computer lab",["Welcome to the engineering computer lab.","Log in with your university username and password.","Printers are located in the corner by the window.","Each student receives a limited number of free pages per term.","Save your files to the cloud because local files are deleted every night.","If a computer freezes, leave a note on the screen and tell the lab assistant.","The lab is busiest before exams, so plan ahead if you need to finish a large project or print a long paper."]],
+ ["Art museum",["This is the university art museum.","Admission is free for all students and staff.","The main gallery displays paintings from local artists.","Please do not touch the artwork or use flash photography.","Lockers for coats and large bags are available near the entrance.","Guided tours begin every hour and last about forty-five minutes from start to finish.","The museum also hosts evening events where visitors can meet the artists and learn about their work."]],
+ ["Conference room",["This is our main conference room.","It can hold up to twenty people comfortably.","You can reserve the room through the company calendar.","The projector and video equipment are controlled from the front panel.","Please return the chairs to their places when your meeting is over.","If you need help connecting your laptop, contact the technology team before the meeting starts.","Because the room is in high demand, please cancel your reservation as soon as you know you will not need it."]],
+ ["Community garden",["Welcome to the community garden.","Students grow vegetables and flowers here every season.","Garden tools are kept in the wooden shed by the gate.","Please water your plants early in the morning or late in the evening.","Each volunteer is responsible for keeping their own section free of weeds.","Fresh produce from the garden is donated to the student food pantry every Friday.","If you would like a plot of your own next spring, fill out an application at the sustainability office."]],
+ ["Swimming pool",["This is the campus swimming pool.","Everyone must shower before entering the water.","The deep end is reserved for experienced swimmers only.","Lifeguards are on duty whenever the pool is open to the public.","Lap lanes are marked by speed, so choose the one that matches your pace.","Swimming lessons for beginners are offered on Tuesday and Thursday evenings throughout the semester.","Please leave your phone and other valuables in a locker, since the pool area can get very wet and crowded."]],
+ ["Hotel front desk",["This is the hotel's front desk.","Guests check in here after two in the afternoon.","Room keys are kept in the drawer below the counter.","Always greet guests with a smile and ask how you can help.","Before giving out a key, check the guest's photo ID and reservation.","Questions about local restaurants and attractions can be answered using the guide in the top drawer.","At the end of each shift, count the cash in the register and write the total in the daily report."]],
+ ["Student center",["This is the student center on campus.","Most student clubs have offices on the second floor.","The information desk can help you find events and services.","There is a small post office where you can send packages.","Lounge chairs by the windows are a popular place to relax between classes.","Club fairs are held in the main hall at the beginning of every semester.","If you want to start a new organization, you need at least five members and a faculty advisor."]],
+ ["Practice rooms",["These are the music practice rooms.","Each room has a piano and a music stand.","You can sign up for a one-hour time slot online.","Please close the door completely so the sound does not travel.","Instruments may be borrowed from the storage room with a valid student ID.","Food and drinks are not allowed because they could damage the pianos and other equipment.","If you are more than fifteen minutes late for your reservation, the room may be given to another student."]],
+ ["Shuttle stop",["This is the main campus shuttle stop.","Shuttles run every fifteen minutes during the day.","The blue line goes downtown and the red line goes to the stadium.","You can track each bus in real time using the campus app.","Please have your student ID ready to show the driver as you board.","After nine o'clock at night, shuttles run less often, so check the evening schedule.","During bad weather, service may be delayed, and updates will be sent to all students by text message."]],
+ ["Newspaper office",["Welcome to the student newspaper office.","Writers meet here every Monday to plan stories.","Each section editor has a desk along the back wall.","Please submit your articles by Wednesday evening at the latest.","Photographers can borrow cameras from the equipment closet with permission.","Every article is checked by two editors before it is approved for the weekly print edition.","New volunteers are always welcome, and you do not need any previous journalism experience to join our team."]],
+ ["Campus theater",["This is the campus theater.","The main stage seats about three hundred people.","Costumes and props are stored in the rooms behind the stage.","Actors should arrive at least one hour before each performance.","The lighting and sound booth is located at the back of the balcony.","Auditions for the spring play will be held in the rehearsal room next month.","Even if you are not interested in acting, you can help by building sets, designing costumes, or running the lights."]]
+];
+
+const wc = s => s.trim().split(/\s+/).length;
+const POOL = {short:[],medium:[],long:[]};
+SETS.forEach(([,ss])=>ss.forEach((s,i)=>{ (i<2?POOL.short:i<5?POOL.medium:POOL.long).push(s); }));
+
+const $ = id => document.getElementById(id);
+const store = {
+  get(k,d){try{const v=localStorage.getItem('lr_'+k);return v==null?d:JSON.parse(v)}catch(e){return d}},
+  set(k,v){try{localStorage.setItem('lr_'+k,JSON.stringify(v))}catch(e){}}
+};
+
+const S = {
+  mode:{type:'set',idx:store.get('setIdx',0)},
+  queue:[], pos:0, phase:'idle', running:false, marks:[], results:[], token:0, timers:[],
+  done:store.get('doneSets',[]),
+  cfg:Object.assign({rate:0.95,extra:0,show:'after',auto:true,beep:true,voice:'',mic:true,lang:'en-US'},store.get('cfg',{}))
+};
+const synth = window.speechSynthesis;
+if(!synth) $('warn').hidden=false;
+
+/* ---------- tone ---------- */
+let actx;
+function beep(){
+  if(!S.cfg.beep) return;
+  try{
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.frequency.value=880; o.type='sine';
+    g.gain.setValueAtTime(0.0001,actx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.25,actx.currentTime+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,actx.currentTime+0.35);
+    o.connect(g).connect(actx.destination); o.start(); o.stop(actx.currentTime+0.4);
+  }catch(e){}
+}
+
+/* ---------- voices ---------- */
+let voices=[];
+function loadVoices(){
+  if(!synth) return;
+  voices = synth.getVoices().filter(v=>/^en[-_]/i.test(v.lang)||v.lang==='en');
+  const pref = ['en-US','en-GB','en-AU','en-CA'];
+  voices.sort((a,b)=>{const ia=pref.indexOf(a.lang.replace('_','-')),ib=pref.indexOf(b.lang.replace('_','-'));return (ia<0?9:ia)-(ib<0?9:ib)||a.name.localeCompare(b.name)});
+  const sel=$('voiceSel'); sel.innerHTML='';
+  if(!voices.length){sel.innerHTML='<option value="">Default voice</option>';return}
+  voices.forEach(v=>{const o=document.createElement('option');o.value=v.voiceURI;o.textContent=`${v.name} (${v.lang})`;sel.appendChild(o)});
+  if(!voices.find(v=>v.voiceURI===S.cfg.voice)){
+    const good = voices.find(v=>/natural|google us|samantha|aria|jenny/i.test(v.name)) || voices[0];
+    S.cfg.voice = good.voiceURI;
+  }
+  sel.value=S.cfg.voice;
+}
+if(synth){loadVoices(); synth.onvoiceschanged=loadVoices;}
+
+function speak(text,tok){
+  return new Promise(res=>{
+    if(!synth){ later(res, 800+wc(text)*400, tok); return; }
+    synth.cancel();
+    const u=new SpeechSynthesisUtterance(text);
+    const v=voices.find(v=>v.voiceURI===S.cfg.voice); if(v){u.voice=v;u.lang=v.lang} else u.lang='en-US';
+    u.rate=S.cfg.rate;
+    let fin=false; const end=()=>{if(!fin){fin=true;res()}};
+    u.onend=end; u.onerror=end;
+    later(end, (wc(text)*0.55/S.cfg.rate+4)*1000, tok);
+    synth.speak(u);
+  });
+}
+
+/* ---------- speech recognition ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec=null, heard='', lastHeardAt=0, micBlocked=false;
+const micOn = () => S.cfg.mic && SR && !micBlocked;
+function micNote(){
+  const n=$('micNote');
+  if(!S.cfg.mic){n.hidden=true;return}
+  if(!SR){n.hidden=false;n.textContent="This browser can't recognize speech. Open the trainer in Chrome or Edge on a computer, or Safari on a Mac or iPhone, to have your answers checked.";return}
+  if(micBlocked){n.hidden=false;n.textContent="The microphone is blocked here, so your answers can't be checked. Open the downloaded copy of this trainer in Chrome or Edge and allow the microphone when asked. Until then, use the Got it and Missed words buttons.";return}
+  n.hidden=true;
+}
+function startListening(tok){
+  heard=''; lastHeardAt=0;
+  if(!micOn()) return;
+  try{
+    const r=new SR(); rec=r;
+    r.lang=S.cfg.lang; r.interimResults=true; r.continuous=true; r.maxAlternatives=1;
+    r.onresult=e=>{ if(tok!==S.token) return;
+      let t=''; for(const x of e.results) t+=x[0].transcript+' ';
+      heard=t.trim(); lastHeardAt=performance.now(); $('live').textContent=heard; };
+    r.onerror=e=>{ if(e.error==='not-allowed'||e.error==='service-not-allowed'||e.error==='audio-capture'){micBlocked=true;micNote();render()} };
+    r.onend=()=>{ if(rec===r) rec=null; r._done&&r._done(); };
+    r.start();
+  }catch(e){ rec=null }
+}
+function stopListening(){
+  return new Promise(res=>{
+    const r=rec; if(!r){res();return}
+    let fin=false; const end=()=>{if(!fin){fin=true;res()}};
+    r._done=end; setTimeout(end,1200);
+    try{r.stop()}catch(e){end()}
+  });
+}
+function abortListening(){ const r=rec; rec=null; if(r){try{r.abort()}catch(e){}} }
+
+/* ---------- comparison ---------- */
+const ONES=['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
+const TENS=['','','twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
+function n2w(n){ if(n<20)return ONES[n]; if(n<100)return TENS[Math.floor(n/10)]+(n%10?' '+ONES[n%10]:''); if(n<1000)return ONES[Math.floor(n/100)]+' hundred'+(n%100?' '+n2w(n%100):''); return String(n) }
+function norm(s){
+  return s.toLowerCase()
+    .replace(/[’']/g,'')
+    .replace(/\b(\d+)(st|nd|rd|th)\b/g,'$1')
+    .replace(/\d+/g,d=>' '+n2w(+d)+' ')
+    .replace(/[-–—/]/g,' ')
+    .replace(/[^a-z0-9\s]/g,' ')
+    .split(/\s+/).filter(Boolean);
+}
+function compare(sentence, said){
+  const disp=sentence.split(/\s+/), a=[], owner=[];
+  disp.forEach((w,i)=>norm(w).forEach(t=>{a.push(t);owner.push(i)}));
+  const b=norm(said), n=a.length, m=b.length;
+  const dp=Array.from({length:n+1},(_,i)=>Array(m+1).fill(0));
+  for(let i=0;i<=n;i++)dp[i][0]=i; for(let j=0;j<=m;j++)dp[0][j]=j;
+  for(let i=1;i<=n;i++)for(let j=1;j<=m;j++)
+    dp[i][j]=Math.min(dp[i-1][j]+1,dp[i][j-1]+1,dp[i-1][j-1]+(a[i-1]===b[j-1]?0:1));
+  const ops=[]; let i=n,j=m;
+  while(i>0||j>0){
+    if(i>0&&j>0&&a[i-1]===b[j-1]&&dp[i][j]===dp[i-1][j-1]){ops.push({t:'ok',i:i-1});i--;j--}
+    else if(i>0&&j>0&&dp[i][j]===dp[i-1][j-1]+1){ops.push({t:'sub',i:i-1,s:b[j-1]});i--;j--}
+    else if(i>0&&dp[i][j]===dp[i-1][j]+1){ops.push({t:'miss',i:i-1});i--}
+    else {ops.push({t:'extra',s:b[j-1]});j--}
+  }
+  ops.reverse();
+  const word=disp.map(()=>({miss:0,sub:[],ok:0})), extras=disp.map(()=>[]), lead=[];
+  let last=-1, okCount=0, subs=0, misses=0, extraN=0;
+  ops.forEach(o=>{
+    if(o.t==='extra'){extraN++; (last<0?lead:extras[last]).push(o.s); return}
+    const w=word[owner[o.i]]; last=owner[o.i];
+    if(o.t==='ok'){w.ok++;okCount++} else if(o.t==='miss'){w.miss++;misses++} else {w.sub.push(o.s);subs++}
+  });
+  const status=word.map(w=>w.miss&&!w.ok&&!w.sub.length?{c:'miss'}:w.sub.length||w.miss?{c:'sub',said:w.sub.join(' ')||'—'}:{c:'ok'});
+  return {status,extras,lead,score:n?okCount/n:0,okCount,n,subs,misses,extraN,said,perfect:okCount===n&&!extraN};
+}
+
+/* ---------- timing ---------- */
+const respondSecs = s => Math.min(12,Math.max(8,Math.round(5+wc(s)*0.4))) + S.cfg.extra;
+function later(fn,ms,tok){const t=setTimeout(()=>{if(tok===S.token)fn()},ms);S.timers.push(t)}
+function stopAll(){S.token++;S.timers.forEach(clearTimeout);S.timers=[];cancelAnimationFrame(rafId);if(synth)synth.cancel();abortListening()}
+
+/* ---------- flow ---------- */
+function loadMode(m){
+  stopAll(); S.mode=m; S.pos=0; S.running=false; S.phase='idle';
+  if(m.type==='set'){S.queue=SETS[m.idx][1].slice(); store.set('setIdx',m.idx)}
+  else{
+    const p=POOL[m.tier].slice(); for(let i=p.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[p[i],p[j]]=[p[j],p[i]]}
+    S.queue=p.slice(0,7).sort((a,b)=>wc(a)-wc(b));
+  }
+  S.marks=S.queue.map(()=>null); S.results=S.queue.map(()=>null);
+  render();
+}
+function start(){ S.running=true; playCurrent(); }
+function stop(){ stopAll(); S.running=false; S.phase='idle'; render(); }
+function playCurrent(){
+  stopAll(); const tok=S.token;
+  if(S.pos>=S.queue.length){finish();return}
+  S.results[S.pos]=null;
+  S.phase='listen'; setRing(1); render();
+  speak(S.queue[S.pos],tok).then(()=>{ if(tok===S.token) later(()=>respond(tok),350,tok) });
+}
+let rafId;
+function respond(tok){
+  beep(); S.phase='respond'; $('live').textContent=''; render();
+  later(()=>startListening(tok),250,tok);
+  const total=respondSecs(S.queue[S.pos])*1000, t0=performance.now();
+  const tick=()=>{ if(tok!==S.token) return;
+    const now=performance.now(), left=Math.max(0,total-(now-t0));
+    setRing(left/total, Math.ceil(left/1000));
+    // finish early once you've spoken and then paused for 2 seconds
+    const pausedAfterSpeech = micOn() && heard && lastHeardAt && now-lastHeardAt>2000;
+    if(left<=0||pausedAfterSpeech){check(tok)} else rafId=requestAnimationFrame(tick);
+  };
+  rafId=requestAnimationFrame(tick);
+}
+async function check(tok){
+  if(tok!==S.token||S.phase!=='respond') return;
+  cancelAnimationFrame(rafId);
+  S.phase='checking';
+  const usedMic=micOn();
+  await stopListening();
+  if(tok!==S.token) return;
+  if(usedMic){
+    const r=compare(S.queue[S.pos],heard);
+    S.results[S.pos]=r;
+    if(heard) S.marks[S.pos]=r.perfect?'ok':'miss';
+  }
+  S.phase='check'; setRing(1); render();
+  const r=S.results[S.pos];
+  if(S.cfg.auto && S.running) later(()=>advance(), r && !r.perfect ? 7000 : 3500, tok);
+}
+function advance(){ S.pos++; if(S.pos>=S.queue.length){finish()} else if(S.running) playCurrent(); else {S.phase='idle';render()} }
+function finish(){
+  stopAll(); S.running=false; S.phase='done';
+  if(S.mode.type==='set' && !S.done.includes(S.mode.idx)){S.done.push(S.mode.idx);store.set('doneSets',S.done)}
+  render();
+}
+function go(d){ const n=S.pos+d; if(n<0||n>=S.queue.length) return; S.pos=n; if(S.running) playCurrent(); else {stopAll();S.phase='idle';render()} }
+function mark(v){ S.marks[S.pos]=v; renderLadder(); if(S.phase==='check'){ stopAll(); later(()=>advance(),400,S.token) } }
+
+/* ---------- render ---------- */
+const C=326.7;
+function setRing(frac,num){
+  $('ringBar').setAttribute('stroke-dashoffset',String(C*(1-frac)));
+  if(num!=null){$('ringNum').textContent=num;$('ringSub').textContent='seconds'}
+}
+const PHASE_TXT={idle:'Ready',listen:'Listen',respond:'Your turn — speak',checking:'Checking',check:'Check',done:'Done'};
+function wordEl(text,cls){const el=document.createElement('span');el.className='w'+(cls?' '+cls:'');el.textContent=text;return el}
+function render(){
+  const m=S.mode;
+  $('setTitle').innerHTML = m.type==='set'
+    ? `<small>Set ${m.idx+1} of ${SETS.length}</small>${SETS[m.idx][0]}`
+    : `<small>Length drill</small>${m.tier[0].toUpperCase()+m.tier.slice(1)} sentences`;
+  const ph = S.phase==='checking'?'respond':S.phase;
+  $('phase').dataset.p=ph; $('phaseTxt').textContent=PHASE_TXT[S.phase];
+  $('ring').dataset.p=ph;
+  const isDone=S.phase==='done';
+  $('doneBox').hidden=!isDone; $('console').hidden=isDone; $('mainControls').hidden=isDone;
+  if(isDone){
+    const ok=S.marks.filter(x=>x==='ok').length, miss=S.marks.filter(x=>x==='miss').length;
+    const rs=S.results.filter(r=>r&&r.said);
+    const avg = rs.length ? Math.round(100*rs.reduce((a,r)=>a+r.score,0)/rs.length) : null;
+    $('doneTxt').textContent = (ok+miss ? `${ok} of ${S.queue.length} sentences repeated perfectly.` : 'Try the set again with the sentence hidden until after you speak.')
+      + (avg!=null ? ` Average word accuracy: ${avg}%.` : '') + (miss ? ' Replay the red ones in the chart below until they feel easy.' : '');
+    $('nextSetBtn').textContent = m.type==='set' ? 'Next set →' : 'New drill →';
+  }
+  if(S.phase!=='respond'){ $('ringNum').textContent=Math.min(S.pos+1,S.queue.length); $('ringSub').textContent='of '+S.queue.length; }
+  if(S.phase==='idle') setRing(S.pos/S.queue.length);
+
+  const s=S.queue[Math.min(S.pos,S.queue.length-1)]||'';
+  const res=S.results[S.pos];
+  const box=$('sentence'); box.innerHTML='';
+  if(S.phase==='check' && res){
+    res.lead.forEach(x=>box.appendChild(wordEl(x,'d-extra')));
+    s.split(/\s+/).forEach((w,i)=>{
+      const st=res.status[i];
+      if(st.c==='sub'){const el=wordEl(w,'d-sub');const sm=document.createElement('small');sm.textContent=st.said;el.appendChild(sm);box.appendChild(el)}
+      else box.appendChild(wordEl(w,'d-'+st.c));
+      res.extras[i].forEach(x=>box.appendChild(wordEl(x,'d-extra')));
+    });
+  } else {
+    const show = S.cfg.show==='always' ? true : S.cfg.show==='after' ? S.phase==='check' : false;
+    s.split(/\s+/).forEach(w=>{
+      if(show) box.appendChild(wordEl(w));
+      else{const el=document.createElement('span');el.className='slot';el.style.width=Math.max(1.2,w.replace(/[^\w']/g,'').length*0.55)+'em';box.appendChild(el)}
+    });
+  }
+  const n=wc(s);
+  $('meta').textContent = `${n} words · ${respondSecs(s)} seconds to repeat` + (S.phase==='idle'&&S.pos===0?' · press Start':'');
+
+  const listening = (S.phase==='respond'||S.phase==='checking') && micOn();
+  $('live').hidden = !listening;
+  const v=$('verdict'); v.innerHTML='';
+  v.hidden = !(S.phase==='check' && res);
+  if(S.phase==='check' && res){
+    const pct=Math.round(res.score*100);
+    let cls, txt;
+    if(!res.said){cls='bad';txt="I didn't hear anything. Check that your microphone is on and speak a little louder."}
+    else if(res.perfect){cls='ok';txt='Perfect repeat.'}
+    else if(res.score>=0.85){cls='mid';txt=summary(res)}
+    else {cls='bad';txt=summary(res)}
+    const chip=document.createElement('span'); chip.className='chip '+cls; chip.textContent=res.said?`${res.okCount}/${res.n} words · ${pct}%`:'No speech';
+    const t=document.createElement('span'); t.textContent=txt;
+    v.append(chip,t);
+    if(res.said){const sd=document.createElement('div');sd.className='said';sd.style.flexBasis='100%';sd.innerHTML='You said: <b></b>';sd.querySelector('b').textContent=res.said;v.appendChild(sd)}
+  }
+
+  $('playBtn').textContent = S.running ? '■ Stop' : (S.pos>0 ? '▶ Continue' : '▶ Start');
+  $('replayBtn').disabled = !S.queue.length;
+  $('prevBtn').disabled = S.pos===0; $('nextBtn').disabled = S.pos>=S.queue.length-1;
+  $('doneSpeakBtn').hidden = !(S.phase==='respond' && micOn());
+  $('rateBox').classList.toggle('on', S.phase==='check');
+  renderLadder(); renderPickers();
+}
+function summary(r){
+  const parts=[];
+  if(r.misses) parts.push(`${r.misses} missed`);
+  if(r.subs) parts.push(`${r.subs} changed`);
+  if(r.extraN) parts.push(`${r.extraN} extra`);
+  return (r.score>=0.85?'Close. ':'Keep practicing. ')+parts.join(', ')+(parts.length?' word'+(r.misses+r.subs+r.extraN>1?'s':'')+'.':'');
+}
+function renderLadder(){
+  const L=$('ladder'); L.innerHTML='';
+  const max=Math.max(...S.queue.map(wc));
+  S.queue.forEach((s,i)=>{
+    const b=document.createElement('button'); b.className='rung';
+    if(i===S.pos && S.phase!=='done') b.classList.add('cur');
+    if(S.marks[i]) b.classList.add(S.marks[i]);
+    b.setAttribute('aria-label',`Sentence ${i+1}, ${wc(s)} words`);
+    const r=S.results[i];
+    b.innerHTML=`<span class="col" style="height:${Math.round(18+62*wc(s)/max)}px"></span><span class="lbl">${r&&r.said?Math.round(r.score*100)+'%':wc(s)+'w'}</span>`;
+    b.onclick=()=>{S.pos=i; if(S.phase==='done')S.phase='idle'; if(S.running) playCurrent(); else {stopAll();S.phase='idle';render()}};
+    L.appendChild(b);
+  });
+}
+function renderPickers(){
+  const sets=$('sets');
+  if(!sets.children.length){
+    SETS.forEach(([name],i)=>{const b=document.createElement('button');b.innerHTML=`<span class="n">${i+1}</span>${name}`;b.onclick=()=>loadMode({type:'set',idx:i});sets.appendChild(b)});
+  }
+  [...sets.children].forEach((b,i)=>{
+    b.setAttribute('aria-pressed',S.mode.type==='set'&&S.mode.idx===i);
+    b.classList.toggle('done-set',S.done.includes(i));
+    b.querySelector('.n').textContent = S.done.includes(i)?'✓':i+1;
+  });
+  document.querySelectorAll('#drills button').forEach(b=>b.setAttribute('aria-pressed',S.mode.type==='drill'&&S.mode.tier===b.dataset.tier));
+}
+
+/* ---------- wiring ---------- */
+$('playBtn').onclick=()=>S.running?stop():start();
+$('replayBtn').onclick=()=>{ if(S.phase==='done')return; S.running=true; playCurrent(); };
+$('prevBtn').onclick=()=>go(-1); $('nextBtn').onclick=()=>go(1);
+$('okBtn').onclick=()=>mark('ok'); $('missBtn').onclick=()=>mark('miss');
+$('doneSpeakBtn').onclick=()=>check(S.token);
+$('againBtn').onclick=()=>{loadMode(S.mode);start()};
+$('nextSetBtn').onclick=()=>{ if(S.mode.type==='set') loadMode({type:'set',idx:(S.mode.idx+1)%SETS.length}); else loadMode(S.mode); start(); };
+document.querySelectorAll('#drills button').forEach(b=>b.onclick=()=>loadMode({type:'drill',tier:b.dataset.tier}));
+
+function bindCfg(){
+  const c=S.cfg, save=()=>store.set('cfg',c);
+  $('rateIn').value=c.rate; $('rateOut').textContent=c.rate.toFixed(2)+'×';
+  $('extraIn').value=c.extra; $('extraOut').textContent='+'+c.extra+' s';
+  $('showSel').value=c.show; $('autoIn').checked=c.auto; $('beepIn').checked=c.beep;
+  $('micIn').checked=c.mic; $('langSel').value=c.lang;
+  $('rateIn').oninput=e=>{c.rate=+e.target.value;$('rateOut').textContent=c.rate.toFixed(2)+'×';save()};
+  $('extraIn').oninput=e=>{c.extra=+e.target.value;$('extraOut').textContent='+'+c.extra+' s';save();render()};
+  $('showSel').onchange=e=>{c.show=e.target.value;save();render()};
+  $('autoIn').onchange=e=>{c.auto=e.target.checked;save()};
+  $('beepIn').onchange=e=>{c.beep=e.target.checked;save()};
+  $('micIn').onchange=e=>{c.mic=e.target.checked;micBlocked=false;save();micNote();render()};
+  $('langSel').onchange=e=>{c.lang=e.target.value;save()};
+  $('voiceSel').onchange=e=>{c.voice=e.target.value;save()};
+}
+bindCfg(); micNote();
+
+document.addEventListener('keydown',e=>{
+  if(e.target.matches('input,select,textarea')) return;
+  if(e.code==='Space'){e.preventDefault(); if(S.phase==='done') return; S.running?stop():start()}
+  else if(e.key==='r'||e.key==='R'){ if(S.phase!=='done'){S.running=true;playCurrent()} }
+  else if(e.key==='ArrowRight') go(1);
+  else if(e.key==='ArrowLeft') go(-1);
+});
+
+loadMode({type:'set',idx:Math.min(S.mode.idx||0, SETS.length-1)});
+</script>
+
+</body></html>
