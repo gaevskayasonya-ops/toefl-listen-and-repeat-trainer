@@ -104,6 +104,17 @@ button:disabled{opacity:.45;cursor:default}
 .scorebig.mid{background:var(--speak-soft);color:var(--speak)}
 .scorebig.miss{background:var(--miss-soft);color:var(--miss)}
 .rubric{flex:1;min-width:200px;font-size:.95rem}
+.subscores{flex-basis:100%;display:flex;flex-wrap:wrap;gap:6px 16px;font-size:.9rem;color:var(--muted)}
+.subscores b{color:var(--ink);font-family:var(--mono);font-weight:500}
+.lowered{color:var(--miss)}
+.dnotes{flex-basis:100%;list-style:none;margin:0;padding:0;display:grid;gap:4px;font-size:.92rem}
+.dnotes li{padding-left:18px;position:relative}
+.dnotes li::before{content:"";position:absolute;left:2px;top:.55em;width:8px;height:8px;border-radius:50%}
+.dnotes li.ok::before{background:var(--ok)} .dnotes li.mid::before{background:var(--speak)} .dnotes li.miss::before{background:var(--miss)}
+.playback{flex-basis:100%;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.playback button{min-height:38px;padding:6px 12px;font-size:.9rem}
+.meter{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:8px;max-width:320px}
+.meter i{display:block;height:100%;width:0;background:var(--speak);transition:width .08s}
 .rung.mid .col{background:var(--speak-soft);border-color:var(--speak)}
 .rung .col{display:flex;align-items:flex-start;justify-content:center}
 .cpts{font-family:var(--mono);font-size:.85rem;margin-top:4px}
@@ -167,7 +178,7 @@ select{padding:8px;border-radius:8px;border:1px solid var(--line);background:var
   <header>
     <div>
       <h1>Listen and Repeat Trainer</h1>
-      <p class="sub">Hear a sentence, wait for the tone, then say it back word for word. The trainer listens, marks each word, and scores every sentence from 0 to 5 like the real test.</p>
+      <p class="sub">Hear a sentence, wait for the tone, then say it back word for word. The trainer listens, marks each word, checks how clearly and smoothly you speak, and scores every sentence from 0 to 5.</p>
     </div>
     <div class="kbd"><kbd>Space</kbd> start/stop · <kbd>R</kbd> replay · <kbd>←</kbd><kbd>→</kbd> move</div>
   </header>
@@ -191,6 +202,7 @@ select{padding:8px;border-radius:8px;border:1px solid var(--line);background:var
           <div class="sentence" id="sentence"></div>
           <div class="meta" id="meta"></div>
           <div class="live" id="live" hidden></div>
+          <div class="meter" id="meter" hidden aria-hidden="true"><i id="meterBar"></i></div>
           <div class="verdict" id="verdict" hidden></div>
         </div>
       </div>
@@ -370,7 +382,8 @@ function startListening(tok){
     r.lang=S.cfg.lang; r.interimResults=true; r.continuous=true; r.maxAlternatives=1;
     r.onresult=e=>{ if(tok!==S.token || rec!==r || S.phase!=='respond') return;
       let t=''; for(const x of e.results) t+=x[0].transcript+' ';
-      heard=t.trim(); lastHeardAt=performance.now(); $('live').textContent=heard; };
+      heard=t.trim(); lastHeardAt=performance.now(); $('live').textContent=heard;
+      confs=[...e.results].filter(x=>x.isFinal).map(x=>x[0].confidence); };
     r.onerror=e=>{ if(e.error==='not-allowed'||e.error==='service-not-allowed'||e.error==='audio-capture'){micBlocked=true;micNote();render()} };
     r.onend=()=>{ if(rec===r) rec=null; r._done&&r._done(); };
     r.start();
@@ -385,6 +398,78 @@ function stopListening(){
   });
 }
 function abortListening(){ const r=rec; rec=null; if(r){try{r.abort()}catch(e){}} }
+
+/* ---------- recording and delivery ---------- */
+let micStream=null, analyser=null, recorder=null, chunks=[], frames=[], recT0=0, modelMs=0, confs=[];
+const lvlBuf=new Float32Array(1024);
+async function ensureStream(){
+  if(micStream || !micOn() || !navigator.mediaDevices?.getUserMedia) return micStream;
+  try{
+    micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}});
+    actx = actx || new (window.AudioContext||window.webkitAudioContext)();
+    const src=actx.createMediaStreamSource(micStream);
+    analyser=actx.createAnalyser(); analyser.fftSize=1024; src.connect(analyser);
+  }catch(e){ micStream=null; analyser=null }
+  return micStream;
+}
+function level(){ if(!analyser) return 0; analyser.getFloatTimeDomainData(lvlBuf); let s=0; for(const x of lvlBuf) s+=x*x; return Math.sqrt(s/lvlBuf.length) }
+function startRecording(){
+  frames=[]; chunks=[]; confs=[]; recT0=performance.now();
+  if(!micStream || !window.MediaRecorder) return;
+  try{ const r=new MediaRecorder(micStream); recorder=r; r.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)}; r.start() }catch(e){ recorder=null }
+}
+function stopRecording(){
+  return new Promise(res=>{
+    const r=recorder; recorder=null;
+    if(!r||r.state==='inactive'){res(null);return}
+    let fin=false; const end=()=>{ if(fin)return; fin=true; res(chunks.length?new Blob(chunks,{type:r.mimeType||'audio/webm'}):null) };
+    r.onstop=end; setTimeout(end,1500);
+    try{r.stop()}catch(e){end()}
+  });
+}
+function cancelRecording(){ const r=recorder; recorder=null; if(r&&r.state!=='inactive'){try{r.stop()}catch(e){}} }
+
+// Delivery estimate from the recognizer's confidence and the loudness of the recording over time.
+function delivery(said){
+  if(!said) return null;
+  const f=frames.filter(x=>x[0]>450);            // skip the tone
+  let start=null, end=null, pauses=0;
+  if(f.length>15){
+    const lv=f.map(x=>x[1]).sort((a,b)=>a-b);
+    const th=Math.max(0.012, lv[Math.floor(lv.length*0.1)]*3);
+    let lastV=null;
+    for(const [t,l] of f){ if(l>th){ if(start==null) start=t; else if(t-lastV>700) pauses++; lastV=t } }
+    end=lastV;
+  }
+  const cs=confs.filter(c=>c>0), conf=cs.length?cs.reduce((a,b)=>a+b,0)/cs.length:null;
+  const dur=start!=null&&end!=null&&end>start ? end-start : null;
+  const ratio=dur&&modelMs ? dur/modelMs : null;
+  const delay=start!=null ? Math.max(0,(start-400)/1000) : null;
+  let p=5; const notes=[];
+  if(conf!=null){
+    const pc=Math.round(conf*100);
+    if(conf>=0.85) notes.push(['ok',`Clear speech. The recognizer understood you with ${pc}% confidence.`]);
+    else if(conf>=0.7){p-=1; notes.push(['mid',`Mostly clear (${pc}% confidence). Some words were hard to recognize. Finish the endings of each word.`])}
+    else if(conf>=0.5){p-=2; notes.push(['miss',`Hard to recognize (${pc}% confidence). Slow down a little and open your mouth more on vowels.`])}
+    else {p-=3; notes.push(['miss',`Very hard to recognize (${pc}% confidence). Listen to your recording next to the speaker.`])}
+  }
+  if(delay!=null){
+    if(delay>2.5){p-=0.5; notes.push(['mid',`You started ${delay.toFixed(1)} s after the tone. Begin right away while the sentence is fresh.`])}
+    else notes.push(['ok',`Quick start: ${delay.toFixed(1)} s after the tone.`]);
+  }
+  if(dur!=null){
+    if(pauses){p-=Math.min(2,pauses*0.5); notes.push([pauses>1?'miss':'mid',`${pauses} long pause${pauses>1?'s':''} in the middle. Try to say it in one smooth flow.`])}
+    else notes.push(['ok','Smooth: no long pauses.']);
+  }
+  if(ratio!=null){
+    const r=ratio.toFixed(1);
+    if(ratio>1.7){p-=1; notes.push(['mid',`Slow: you took ${r}× as long as the speaker.`])}
+    else if(ratio<0.6){p-=0.5; notes.push(['mid',`Rushed: you took ${r}× as long as the speaker. Keep a natural pace.`])}
+    else notes.push(['ok',`Natural pace: ${r}× the speaker's length.`]);
+  }
+  if(conf==null && dur==null) return null;
+  return {points:Math.max(1,Math.min(5,Math.round(p))),notes,conf,pauses,delay,ratio};
+}
 
 /* ---------- comparison ---------- */
 const ONES=['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
@@ -455,7 +540,11 @@ const tone = p => p==null?'':p>=4?'ok':p===3?'mid':'miss';
 /* ---------- timing ---------- */
 const respondSecs = s => Math.min(12,Math.max(8,Math.round(5+wc(s)*0.4))) + S.cfg.extra;
 function later(fn,ms,tok){const t=setTimeout(()=>{if(tok===S.token)fn()},ms);S.timers.push(t)}
-function stopAll(){S.token++;S.timers.forEach(clearTimeout);S.timers=[];cancelAnimationFrame(rafId);if(synth)synth.cancel();abortListening()}
+function stopAll(){S.token++;S.timers.forEach(clearTimeout);S.timers=[];cancelAnimationFrame(rafId);if(synth)synth.cancel();abortListening();cancelRecording();if(player){player.pause();player=null}}
+let player=null;
+function holdAuto(){ S.timers.forEach(clearTimeout); S.timers=[]; S.held=true; render() }
+function playMine(){ const u=S.audio[S.pos]; if(!u) return; holdAuto(); if(synth)synth.cancel(); if(player)player.pause(); player=new Audio(u); player.play().catch(()=>{}) }
+function playModel(){ holdAuto(); if(player){player.pause();player=null} speak(S.queue[S.pos], S.token) }
 
 /* ---------- flow ---------- */
 function loadMode(m){
@@ -465,26 +554,30 @@ function loadMode(m){
     const p=POOL[m.tier].slice(); for(let i=p.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[p[i],p[j]]=[p[j],p[i]]}
     S.queue=p.slice(0,7).sort((a,b)=>wc(a)-wc(b));
   }
-  S.scores=S.queue.map(()=>null); S.results=S.queue.map(()=>null);
+  (S.audio||[]).forEach(u=>u&&URL.revokeObjectURL(u));
+  S.scores=S.queue.map(()=>null); S.results=S.queue.map(()=>null); S.audio=S.queue.map(()=>null);
   render();
 }
-function start(){ S.running=true; playCurrent(); }
+async function start(){ S.running=true; await ensureStream(); if(S.running && S.phase!=='listen' && S.phase!=='respond') playCurrent(); }
 function stop(){ stopAll(); S.running=false; S.phase='idle'; render(); }
 function playCurrent(){
-  stopAll(); const tok=S.token;
+  stopAll(); const tok=S.token; S.held=false;
   if(S.pos>=S.queue.length){finish();return}
   S.results[S.pos]=null;
   S.phase='listen'; setRing(1); render();
-  speak(S.queue[S.pos],tok).then(()=>{ if(tok===S.token) later(()=>respond(tok),350,tok) });
+  const t0=performance.now();
+  speak(S.queue[S.pos],tok).then(()=>{ if(tok===S.token){ modelMs=performance.now()-t0; later(()=>respond(tok),350,tok) } });
 }
 let rafId;
 function respond(tok){
   heard=''; lastHeardAt=0;
   beep(); S.phase='respond'; $('live').textContent=''; render();
+  startRecording();
   later(()=>startListening(tok),250,tok);
   const total=respondSecs(S.queue[S.pos])*1000, t0=performance.now();
   const tick=()=>{ if(tok!==S.token) return;
     const now=performance.now(), left=Math.max(0,total-(now-t0));
+    if(analyser){ const l=level(); frames.push([now-recT0,l]); $('meterBar').style.width=Math.min(100,l*600)+'%' }
     setRing(left/total, Math.ceil(left/1000));
     // finish early once you've spoken and then paused for 2 seconds
     const pausedAfterSpeech = micOn() && heard && lastHeardAt>t0 && now-t0>2500 && now-lastHeardAt>2000;
@@ -497,12 +590,18 @@ async function check(tok){
   cancelAnimationFrame(rafId);
   S.phase='checking';
   const usedMic=micOn();
-  await stopListening();
+  const [, blob]=await Promise.all([stopListening(), stopRecording()]);
   if(tok!==S.token) return;
+  if(S.audio[S.pos]){ URL.revokeObjectURL(S.audio[S.pos]); S.audio[S.pos]=null }
+  if(blob) S.audio[S.pos]=URL.createObjectURL(blob);
   if(usedMic){
     const r=compare(S.queue[S.pos],heard);
+    r.delivery=delivery(heard);
+    r.final=r.points;
+    // Real raters need the answer to be fully intelligible for a 5 or 4.
+    if(r.delivery && r.delivery.points<=2 && r.final>=4){ r.final-=1; r.lowered=true }
     S.results[S.pos]=r;
-    S.scores[S.pos]=r.points;
+    S.scores[S.pos]=r.final;
   }
   S.phase='check'; setRing(1); render();
   const p=S.scores[S.pos];
@@ -563,6 +662,16 @@ function render(){
       row.append(pill,tx,n); tb.appendChild(row);
     });
     d.appendChild(tb);
+    const ds=S.results.filter(r=>r&&r.delivery).map(r=>r.delivery);
+    if(ds.length){
+      const avgD=ds.reduce((a,d)=>a+d.points,0)/ds.length, cs=ds.filter(d=>d.conf!=null);
+      const pz=ds.reduce((a,d)=>a+(d.pauses||0),0);
+      const dl=document.createElement('p'); dl.className='said';
+      dl.textContent=`Delivery: ${avgD.toFixed(1)} / 5 on average`
+        +(cs.length?` · clarity ${Math.round(100*cs.reduce((a,d)=>a+d.conf,0)/cs.length)}%`:'')
+        +` · ${pz} long pause${pz===1?'':'s'} in the whole set.`;
+      d.appendChild(dl);
+    }
     const note=document.createElement('p'); note.className='tip';
     note.textContent=(unscored?`${unscored} sentence${unscored>1?'s were':' was'} not scored and counted as 0. `:'')
       +'The band is a rough guide. On the real test, these seven scores are combined with your Take an Interview scores to give one Speaking band.';
@@ -595,6 +704,8 @@ function render(){
 
   const listening = (S.phase==='respond'||S.phase==='checking') && micOn();
   $('live').hidden = !listening;
+  $('meter').hidden = !(listening && analyser);
+  if(!listening) $('meterBar').style.width='0%';
   const v=$('verdict'); v.innerHTML='';
   const p=S.scores[S.pos];
   v.hidden = !(S.phase==='check' && (res || p!=null));
@@ -604,6 +715,24 @@ function render(){
       big.innerHTML=`<b>${p}</b><span>/ 5</span>`;
       const rb=document.createElement('span'); rb.className='rubric'; rb.textContent=RUBRIC[p];
       v.append(big,rb);
+    }
+    if(res && res.said){
+      const sub=document.createElement('div'); sub.className='subscores';
+      sub.innerHTML=`<span>Words <b>${res.points}</b>/5</span>`+(res.delivery?`<span>Delivery <b>${res.delivery.points}</b>/5</span>`:'');
+      if(res.lowered){const l=document.createElement('span');l.className='lowered';l.textContent=`Lowered from ${res.points} because the speech was hard to understand.`;sub.appendChild(l)}
+      v.appendChild(sub);
+    }
+    if(res && res.delivery){
+      const ul=document.createElement('ul'); ul.className='dnotes';
+      res.delivery.notes.forEach(([c,t])=>{const li=document.createElement('li');li.className=c;li.textContent=t;ul.appendChild(li)});
+      v.appendChild(ul);
+    }
+    if(S.audio[S.pos] || res){
+      const pb=document.createElement('div'); pb.className='playback';
+      if(S.audio[S.pos]){const b=document.createElement('button');b.textContent='▶ Hear yourself';b.onclick=playMine;pb.appendChild(b)}
+      const m=document.createElement('button');m.textContent='▶ Hear the speaker';m.onclick=playModel;pb.appendChild(m);
+      if(S.held && S.running){const h=document.createElement('span');h.className='tip';h.textContent='Paused here. Press → for the next sentence.';pb.appendChild(h)}
+      v.appendChild(pb);
     }
     if(res){
       const st=document.createElement('div'); st.className='said'; st.style.flexBasis='100%';
