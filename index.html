@@ -453,10 +453,6 @@ function delivery(said){
     else if(conf>=0.5){p-=2; notes.push(['miss',`Hard to recognize (${pc}% confidence). Slow down a little and open your mouth more on vowels.`])}
     else {p-=3; notes.push(['miss',`Very hard to recognize (${pc}% confidence). Listen to your recording next to the speaker.`])}
   }
-  if(delay!=null){
-    if(delay>2.5){p-=0.5; notes.push(['mid',`You started ${delay.toFixed(1)} s after the tone. Begin right away while the sentence is fresh.`])}
-    else notes.push(['ok',`Quick start: ${delay.toFixed(1)} s after the tone.`]);
-  }
   if(dur!=null){
     if(pauses){p-=Math.min(2,pauses*0.5); notes.push([pauses>1?'miss':'mid',`${pauses} long pause${pauses>1?'s':''} in the middle. Try to say it in one smooth flow.`])}
     else notes.push(['ok','Smooth: no long pauses.']);
@@ -566,7 +562,7 @@ function playCurrent(){
   S.results[S.pos]=null;
   S.phase='listen'; setRing(1); render();
   const t0=performance.now();
-  speak(S.queue[S.pos],tok).then(()=>{ if(tok===S.token){ modelMs=performance.now()-t0; later(()=>respond(tok),350,tok) } });
+  speak(S.queue[S.pos],tok).then(()=>{ if(tok===S.token){ modelMs=performance.now()-t0; later(()=>respond(tok),2000,tok) } });
 }
 let rafId;
 function respond(tok){
