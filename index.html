@@ -501,7 +501,7 @@ function compare(sentence, said){
   ops.forEach(o=>{
     if(o.t==='extra'){extraN++; if(!FUNC.has(o.s)) contentErr++; (last<0?lead:extras[last]).push(o.s); return}
     const w=word[owner[o.i]]; last=owner[o.i];
-    if(o.t!=='ok' && !FUNC.has(a[o.i])) contentErr++;
+    if(o.t!=='ok' && !FUNC.has(a[o.i]) && !(o.t==='sub' && endingOnly(a[o.i],o.s))) contentErr++;
     if(o.t==='ok'){w.ok++;okCount++} else if(o.t==='miss'){w.miss++;misses++} else {w.sub.push(o.s);subs++}
   });
   const status=word.map(w=>w.miss&&!w.ok&&!w.sub.length?{c:'miss'}:w.sub.length||w.miss?{c:'sub',said:w.sub.join(' ')||'—'}:{c:'ok'});
@@ -513,6 +513,8 @@ function compare(sentence, said){
 /* ---------- 0–5 scoring, modelled on the ETS Listen and Repeat scale ---------- */
 // Small "grammar" words. Slips on these count as minor; slips on any other word change the meaning.
 const FUNC=new Set('a an the to of in on at by for with from into onto about as and or but so if than that this these those there their its it is are was were be been being am do does did has have had will would can could should may might must shall not no you your we our they them he she his her him i me my us all any each every some both up out off down over near after before while when where who which what how'.split(' '));
+// "school" for "school's", "use" for "used": only a grammar ending differs, so it is a minor slip.
+function endingOnly(x,y){ const [s,l]=x.length<y.length?[x,y]:[y,x]; return s.length>=3 && ['s','es','d','ed'].some(e=>s+e===l) }
 const RUBRIC={
   5:'Exact repetition. Every word is there and in the right order.',
   4:'Meaning kept, with minor slips such as a missed or changed small word. In a long sentence, one content word may be missing.',
