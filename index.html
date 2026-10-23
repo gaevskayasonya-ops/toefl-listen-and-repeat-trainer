@@ -162,6 +162,9 @@ aside{display:grid;gap:20px;min-width:0}
 .levels button.target{border-color:var(--speak);box-shadow:inset 0 0 0 1px var(--speak)}
 .levels button.target span{color:var(--speak)}
 .levels button[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 2px var(--ink)}
+.bank summary{cursor:pointer;font-size:.88rem;color:var(--listen);padding:4px 0}
+.bank summary:focus-visible{outline:3px solid var(--listen);outline-offset:2px}
+.bank ol{margin:8px 0 0;padding:8px 8px 8px 30px;max-height:320px;overflow:auto;background:var(--bg);border-radius:8px;font-size:.88rem;display:grid;gap:4px}
 .levelverdict{margin:0;padding:10px 14px;border-radius:10px;font-weight:700}
 .levelverdict.ok{background:var(--ok-soft);color:var(--ok)} .levelverdict.mid{background:var(--speak-soft);color:var(--speak)} .levelverdict.miss{background:var(--miss-soft);color:var(--miss)}
 .drills{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
@@ -246,6 +249,7 @@ select{padding:8px;border-radius:8px;border:1px solid var(--line);background:var
         <h2>Memory ladder</h2>
         <p class="tip">Rounds of 5 sentences at one length. Average 4 or more to pass a level, then move up 2 words.</p>
         <div class="levels" id="levels"></div>
+        <details class="bank" id="bankBox"><summary id="bankSum"></summary><ol id="bankList"></ol></details>
         <div class="lab">Quick drills</div>
         <div class="drills" id="drills">
           <button data-tier="short">Short<span>5–9 words</span></button>
@@ -1111,12 +1115,20 @@ function renderPickers(){
   if(!box.children.length) LEVELS.forEach(lv=>{ const b=document.createElement('button'); b.dataset.lv=lv; b.onclick=()=>loadMode({type:'level',lv}); box.appendChild(b) });
   // The level to work on: the first one not yet passed.
   const target=LEVELS.find(l=>!(S.levels[l]&&S.levels[l].passed));
+  // Sentence list for the level you're on (or the one to work on next).
+  const shown=S.mode.type==='level'?S.mode.lv:target||LEVELS[0];
+  if($('bankBox').dataset.lv!=String(shown)){
+    $('bankBox').dataset.lv=shown;
+    $('bankSum').textContent=`See all ${LBANK[shown].length} sentences at ${levelName(shown)}`;
+    const ol=$('bankList'); ol.innerHTML='';
+    LBANK[shown].forEach(t=>{const li=document.createElement('li');li.textContent=t;ol.appendChild(li)});
+  }
   [...box.children].forEach(b=>{
     const lv=+b.dataset.lv, L=S.levels[lv];
     b.className=(L&&L.passed?'passed':'')+(lv===target?' target':'');
     b.setAttribute('aria-pressed', String(S.mode.type==='level'&&S.mode.lv===lv));
     b.innerHTML=`<b>${lv===24?'24+':lv+'–'+(lv+1)}</b><span>${L?(L.passed?'✓ ':'')+'best '+L.best.toFixed(1):lv===target?'start here':'words'}</span>`;
-    b.title=levelName(lv)+(L?` · ${L.rounds} round${L.rounds>1?'s':''} · last ${L.last.toFixed(1)}`:'');
+    b.title=levelName(lv)+` · ${LBANK[lv].length} sentences`+(L?` · ${L.rounds} round${L.rounds>1?'s':''} · last ${L.last.toFixed(1)}`:'');
   });
 }
 
