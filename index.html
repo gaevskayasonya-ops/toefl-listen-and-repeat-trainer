@@ -165,6 +165,38 @@ aside{display:grid;gap:20px;min-width:0}
 .bank summary{cursor:pointer;font-size:.88rem;color:var(--listen);padding:4px 0}
 .bank summary:focus-visible{outline:3px solid var(--listen);outline-offset:2px}
 .bank ol{margin:8px 0 0;padding:8px 8px 8px 30px;max-height:320px;overflow:auto;background:var(--bg);border-radius:8px;font-size:.88rem;display:grid;gap:4px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.tabs button{border:0;border-bottom:3px solid transparent;border-radius:0;background:none;font-family:var(--display);font-weight:600;font-size:1.05rem;padding:10px 14px;color:var(--muted)}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--ink)}
+.libview{display:grid;gap:14px}
+.libbar{display:grid;gap:12px}
+.lvchips{display:flex;flex-wrap:wrap;gap:6px}
+.lvchips button{flex-direction:column;gap:0;min-height:48px;padding:6px 12px;line-height:1.2}
+.lvchips b{font-family:var(--mono);font-weight:500}
+.lvchips span{font-family:var(--mono);font-size:.7rem;color:var(--muted)}
+.lvchips button[aria-pressed="true"]{background:var(--ink);color:var(--surface);border-color:var(--ink)}
+.lvchips button[aria-pressed="true"] span{color:var(--surface);opacity:.75}
+.libopts{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center}
+.libopts select{width:auto}
+.libsum{margin:0;color:var(--muted);font-size:.92rem}
+.liblist{list-style:none;margin:0;padding:0;display:grid;gap:10px;counter-reset:item}
+.item{counter-increment:item;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px 14px 52px;position:relative;display:grid;gap:10px;min-width:0}
+.item::before{content:counter(item);position:absolute;left:16px;top:16px;font-family:var(--mono);font-size:.8rem;color:var(--muted)}
+.item.rec{border-color:var(--speak);box-shadow:inset 0 0 0 1px var(--speak)}
+.item.playing{border-color:var(--listen);box-shadow:inset 0 0 0 1px var(--listen)}
+.itxt{font-family:var(--display);font-size:1.15rem;line-height:1.5;display:flex;flex-wrap:wrap;gap:.1em .3em;align-items:baseline}
+.itxt.hidden-text .w{color:transparent;background:var(--line);border-radius:4px}
+.irow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.irow button{min-height:38px;padding:6px 12px;font-size:.9rem}
+.recbtn{border-color:var(--speak);color:var(--speak)}
+.item.rec .recbtn{background:var(--speak);color:var(--surface)}
+.iwc{font-family:var(--mono);font-size:.75rem;color:var(--muted);margin-left:auto}
+.ipts{font-family:var(--mono);font-size:.85rem;padding:4px 10px;border-radius:8px;background:var(--line)}
+.ipts.ok{background:var(--ok-soft);color:var(--ok)} .ipts.mid{background:var(--speak-soft);color:var(--speak)} .ipts.miss{background:var(--miss-soft);color:var(--miss)}
+.ilive{font-size:.92rem;color:var(--ink)}
+.ilive.listening{font-style:italic;color:var(--speak)}
+.libempty{color:var(--muted);padding:12px}
+@media (max-width:520px){.item{padding-left:16px}.item::before{position:static}.iwc{margin-left:0}}
 .levelverdict{margin:0;padding:10px 14px;border-radius:10px;font-weight:700}
 .levelverdict.ok{background:var(--ok-soft);color:var(--ok)} .levelverdict.mid{background:var(--speak-soft);color:var(--speak)} .levelverdict.miss{background:var(--miss-soft);color:var(--miss)}
 .drills{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
@@ -194,10 +226,29 @@ select{padding:8px;border-radius:8px;border:1px solid var(--line);background:var
       <h1>Listen and Repeat Trainer</h1>
       <p class="sub">Hear a sentence, wait for the tone, then say it back word for word. The trainer listens, marks each word, checks how clearly and smoothly you speak, and scores every sentence from 0 to 5.</p>
     </div>
-    <div class="kbd"><kbd>Space</kbd> start/stop · <kbd>R</kbd> replay · <kbd>←</kbd><kbd>→</kbd> move</div>
+    <div class="kbd" id="kbdHint"><kbd>Space</kbd> start/stop · <kbd>R</kbd> replay · <kbd>←</kbd><kbd>→</kbd> move</div>
   </header>
 
-  <div class="grid">
+  <nav class="tabs" role="tablist" aria-label="Practice modes">
+    <button id="tabLib" role="tab">Sentence library</button>
+    <button id="tabPrac" role="tab">Timed practice</button>
+  </nav>
+
+  <section id="libView" class="libview" hidden>
+    <div class="libbar">
+      <div class="lvchips" id="libLevels" aria-label="Sentence length"></div>
+      <div class="libopts">
+        <select id="libFilter" aria-label="Show"><option value="all">All sentences</option><option value="new">Not recorded yet</option><option value="weak">Best score below 4</option></select>
+        <label class="check"><input type="checkbox" id="libAuto"> Record right after listening</label>
+        <label class="check"><input type="checkbox" id="libHide"> Hide text until I record</label>
+      </div>
+    </div>
+    <div id="libNote" class="note" hidden></div>
+    <p class="libsum" id="libSum"></p>
+    <ol class="liblist" id="libList"></ol>
+  </section>
+
+  <div class="grid" id="pracView">
     <section class="stage" aria-live="polite">
       <div class="stage-top">
         <div class="settitle" id="setTitle"></div>
@@ -1164,14 +1215,149 @@ document.addEventListener('keyup',e=>{ if(e.code==='Space' && e.target.matches('
 document.addEventListener('mouseup',e=>{ const b=e.target.closest('button'); if(b) setTimeout(()=>b.blur(),0); });
 document.addEventListener('keydown',e=>{
   if(e.target.matches('input,select,textarea')) return;
-  if(e.repeat) return;
+  if(e.repeat || TAB!=='prac') return;
   if(e.code==='Space'){e.preventDefault(); if(S.phase==='done') return; S.running?stop():start()}
   else if(e.key==='r'||e.key==='R'){ if(S.phase!=='done'){S.running=true;playCurrent()} }
   else if(e.key==='ArrowRight') go(1);
   else if(e.key==='ArrowLeft') go(-1);
 });
 
+
+/* ================= Sentence library ================= */
+const LIB={lv:store.get('libLevel',10), filter:'all', active:null, speaking:null, results:{}, audio:{}, saved:store.get('lib',{})};
+let TAB=store.get('tab','lib');
+function setTab(t){
+  TAB=t; store.set('tab',t);
+  $('libView').hidden=t!=='lib'; $('pracView').hidden=t!=='prac';
+  $('tabLib').setAttribute('aria-selected',String(t==='lib')); $('tabPrac').setAttribute('aria-selected',String(t==='prac'));
+  $('kbdHint').hidden=t!=='prac';
+  if(t==='lib'){ if(S.running) stop(); renderLib() } else { libHalt() }
+}
+function libItems(){
+  return LBANK[LIB.lv].filter(t=>{
+    const s=LIB.saved[t];
+    return LIB.filter==='all' || (LIB.filter==='new' && !s) || (LIB.filter==='weak' && s && s.best<4);
+  });
+}
+function renderLib(){
+  const chips=$('libLevels');
+  if(!chips.children.length) LEVELS.forEach(lv=>{const b=document.createElement('button');b.dataset.lv=lv;b.onclick=()=>{libHalt();LIB.lv=lv;store.set('libLevel',lv);renderLib()};chips.appendChild(b)});
+  [...chips.children].forEach(b=>{
+    const lv=+b.dataset.lv, done=LBANK[lv].filter(t=>LIB.saved[t]).length;
+    b.setAttribute('aria-pressed',String(lv===LIB.lv));
+    b.innerHTML=`<b>${lv===24?'24+':lv+'–'+(lv+1)}</b><span>${done?done+' / ':''}${LBANK[lv].length}</span>`;
+  });
+  const all=LBANK[LIB.lv], rec=all.filter(t=>LIB.saved[t]);
+  const avg=rec.length?rec.reduce((a,t)=>a+LIB.saved[t].best,0)/rec.length:null;
+  $('libSum').textContent=`${levelName(LIB.lv)} · ${all.length} sentences · ${rec.length} recorded`+(avg!=null?` · average best score ${avg.toFixed(1)}`:'');
+  const ol=$('libList'); ol.innerHTML='';
+  const items=libItems();
+  if(!items.length){ const li=document.createElement('li'); li.className='libempty'; li.textContent=LIB.filter==='new'?'You have recorded every sentence at this level.':'No sentences scored below 4 at this level.'; ol.appendChild(li); return }
+  items.forEach(t=>{ const li=document.createElement('li'); li.className='item'; li._t=t; ol.appendChild(li); renderItem(li) });
+}
+function itemFor(t){ return [...$('libList').children].find(li=>li._t===t) }
+function renderItem(li){
+  const t=li._t, r=LIB.results[t], s=LIB.saved[t], recOn=LIB.active===t, playing=LIB.speaking===t;
+  li.className='item'+(recOn?' rec':'')+(playing?' playing':'');
+  li.innerHTML='';
+  const tx=document.createElement('div'); tx.className='itxt'+($('libHide').checked&&!r?' hidden-text':'');
+  if(r){
+    r.res.lead.forEach(x=>tx.appendChild(wordEl(x,'d-extra')));
+    t.split(/\s+/).forEach((w,i)=>{ const st=r.res.status[i];
+      if(st.c==='sub'){const el=wordEl(w,'d-sub');const sm=document.createElement('small');sm.textContent=st.said;el.appendChild(sm);tx.appendChild(el)}
+      else tx.appendChild(wordEl(w,'d-'+st.c));
+      r.res.extras[i].forEach(x=>tx.appendChild(wordEl(x,'d-extra'))); });
+  } else t.split(/\s+/).forEach(w=>tx.appendChild(wordEl(w)));
+  const row=document.createElement('div'); row.className='irow';
+  const lb=document.createElement('button'); lb.textContent=playing?'■ Stop':'▶ Listen'; lb.onclick=()=>playing?libHalt():libListen(t);
+  const rb=document.createElement('button'); rb.className='recbtn'; rb.textContent=recOn?'■ Stop recording':'● Record'; rb.onclick=()=>recOn?libStop():libRecord(t);
+  row.append(lb,rb);
+  if(LIB.audio[t]){const mb=document.createElement('button');mb.textContent='▶ My recording';mb.onclick=()=>{libHalt();if(player)player.pause();player=new Audio(LIB.audio[t]);player.play().catch(()=>{})};row.appendChild(mb)}
+  const wcs=document.createElement('span'); wcs.className='iwc'; wcs.textContent=wc(t)+' words'; row.appendChild(wcs);
+  if(r||s){ const p=r?r.final:s.last; const pill=document.createElement('span'); pill.className='ipts '+tone(p); pill.textContent=`${p}/5`; pill.title=s?`Best ${s.best} · recorded ${s.n} time${s.n>1?'s':''}`:''; row.appendChild(pill) }
+  li.append(tx,row);
+  const info=document.createElement('div'); info.className='ilive';
+  if(recOn){ info.textContent=LIB.heard||'Recording… say the sentence.'; info.classList.add('listening') }
+  else if(r){
+    info.textContent=(r.res.said?`${RUBRIC[r.final].split(':')[0]}. ${r.res.reason||''}`:"I didn't hear anything. Check that the microphone is on.")
+      +(r.capped?` Lowered from ${r.res.points}: hard to understand (${Math.round(r.conf*100)}% confidence).`:'');
+    if(r.res.said){const b=document.createElement('div');b.className='said';b.innerHTML='You said: <b></b>';b.querySelector('b').textContent=r.res.said;info.appendChild(b)}
+  }
+  if(info.textContent) li.appendChild(info);
+}
+function libRefresh(t){ const li=itemFor(t); if(li) renderItem(li) }
+function libHalt(){
+  if(synth) synth.cancel();
+  const sp=LIB.speaking; LIB.speaking=null; LIB.after=null; if(sp) libRefresh(sp);
+  if(LIB.active) libStop();
+}
+function libListen(t){
+  libHalt(); if(player){player.pause();player=null}
+  LIB.speaking=t; libRefresh(t);
+  const tok=S.token;
+  speak(t,tok).then(()=>{
+    if(LIB.speaking!==t) return;
+    LIB.speaking=null; libRefresh(t);
+    if($('libAuto').checked){ LIB.after=t; setTimeout(()=>{ if(LIB.after===t){ LIB.after=null; libRecord(t) } }, 900) }
+  });
+}
+async function libRecord(t){
+  if(LIB.active) await libStop();
+  if(synth) synth.cancel(); if(LIB.speaking){const sp=LIB.speaking;LIB.speaking=null;libRefresh(sp)}
+  if(player){player.pause();player=null}
+  if(!SR || !S.cfg.mic){ alertNote("Speech checking is off or not supported here. Turn on 'Check my speech' in the practice settings and use Chrome or Edge."); return }
+  await ensureStream();
+  beep();
+  LIB.active=t; LIB.heard=''; LIB.confs=[]; LIB.lastAt=0; LIB.t0=performance.now(); LIB.chunks=[];
+  try{ if(micStream&&window.MediaRecorder){ const mr=new MediaRecorder(micStream); LIB.mr=mr; mr.ondataavailable=e=>{if(e.data.size)LIB.chunks.push(e.data)}; mr.start() } }catch(e){ LIB.mr=null }
+  try{
+    const r=new SR(); LIB.sr=r; r.lang=S.cfg.lang; r.interimResults=true; r.continuous=true;
+    r.onresult=e=>{ if(LIB.sr!==r) return; let s=''; for(const x of e.results) s+=x[0].transcript+' ';
+      LIB.heard=s.trim(); LIB.lastAt=performance.now(); LIB.confs=[...e.results].filter(x=>x.isFinal).map(x=>x[0].confidence);
+      const li=itemFor(t); const lv=li&&li.querySelector('.ilive'); if(lv) lv.textContent=LIB.heard };
+    r.onerror=e=>{ if(e.error==='not-allowed'||e.error==='service-not-allowed'){ micBlocked=true; alertNote("The microphone is blocked. Allow it in Chrome's address bar, then try again.") } };
+    r.onend=()=>{ if(r._done) r._done() };
+    r.start();
+  }catch(e){ LIB.sr=null }
+  LIB.timer=setInterval(()=>{
+    const now=performance.now();
+    if((LIB.heard && now-LIB.lastAt>2000 && now-LIB.t0>2500) || now-LIB.t0>25000) libStop();
+  },200);
+  libRefresh(t);
+}
+async function libStop(){
+  const t=LIB.active; if(!t) return; LIB.active=null; clearInterval(LIB.timer);
+  const r=LIB.sr, mr=LIB.mr; LIB.sr=null; LIB.mr=null;
+  libRefresh(t);
+  const srDone=new Promise(res=>{ if(!r){res();return} let f=false; const end=()=>{if(!f){f=true;res()}}; r._done=end; setTimeout(end,1200); try{r.stop()}catch(e){end()} });
+  const blob=await new Promise(res=>{ if(!mr||mr.state==='inactive'){res(null);return} let f=false; const end=()=>{if(!f){f=true;res(LIB.chunks.length?new Blob(LIB.chunks,{type:mr.mimeType||'audio/webm'}):null)}}; mr.onstop=end; setTimeout(end,1500); try{mr.stop()}catch(e){end()} });
+  await srDone;
+  if(LIB.audio[t]) URL.revokeObjectURL(LIB.audio[t]);
+  if(blob) LIB.audio[t]=URL.createObjectURL(blob);
+  const res=compare(t,LIB.heard), cs=LIB.confs.filter(c=>c>0), conf=cs.length?cs.reduce((a,b)=>a+b,0)/cs.length:null;
+  const cap=intelligibilityCap(conf), final=Math.min(res.points,cap);
+  LIB.results[t]={res,final,conf,capped:final<res.points};
+  if(res.said){ const o=LIB.saved[t]||{best:0,n:0}; LIB.saved[t]={best:Math.max(o.best,final),last:final,n:o.n+1}; store.set('lib',LIB.saved) }
+  libRefresh(t); renderLibHeader();
+}
+function renderLibHeader(){ const keep=$('libList'); const items=[...keep.children]; renderLibChipsAndSum(); }
+function renderLibChipsAndSum(){
+  const all=LBANK[LIB.lv], rec=all.filter(t=>LIB.saved[t]);
+  const avg=rec.length?rec.reduce((a,t)=>a+LIB.saved[t].best,0)/rec.length:null;
+  $('libSum').textContent=`${levelName(LIB.lv)} · ${all.length} sentences · ${rec.length} recorded`+(avg!=null?` · average best score ${avg.toFixed(1)}`:'');
+  [...$('libLevels').children].forEach(b=>{ const lv=+b.dataset.lv, done=LBANK[lv].filter(x=>LIB.saved[x]).length;
+    b.querySelector('span').textContent=`${done?done+' / ':''}${LBANK[lv].length}` });
+}
+function alertNote(msg){ const n=$('libNote'); n.textContent=msg; n.hidden=false }
+$('tabLib').onclick=()=>setTab('lib'); $('tabPrac').onclick=()=>setTab('prac');
+$('libFilter').onchange=e=>{ libHalt(); LIB.filter=e.target.value; renderLib() };
+$('libHide').onchange=()=>{ try{localStorage.setItem('lr_libHide',$('libHide').checked?'1':'0')}catch(e){} renderLib() };
+$('libAuto').onchange=()=>{ try{localStorage.setItem('lr_libAuto',$('libAuto').checked?'1':'0')}catch(e){} };
+try{ $('libHide').checked=localStorage.getItem('lr_libHide')==='1'; $('libAuto').checked=localStorage.getItem('lr_libAuto')!=='0' }catch(e){ $('libAuto').checked=true }
+if(!LEVELS.includes(LIB.lv)) LIB.lv=10;
+
 loadMode({type:'set',idx:Math.min(S.mode.idx||0, SETS.length-1)});
+setTab(TAB);
 </script>
 
 </body></html>
