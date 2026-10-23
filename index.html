@@ -178,6 +178,9 @@ aside{display:grid;gap:20px;min-width:0}
 .lvchips button[aria-pressed="true"] span{color:var(--surface);opacity:.75}
 .libopts{display:flex;flex-wrap:wrap;gap:10px 22px;align-items:center}
 .libopts select{width:auto}
+.libready{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;background:var(--surface);border:1px solid var(--line);font-size:.92rem;color:var(--ink);border-radius:10px;padding:10px 14px}
+.libready.go{background:var(--ok-soft);border-color:var(--ok);font-weight:700}
+.libready button{min-height:38px}
 .libsum{margin:0;color:var(--muted);font-size:.92rem}
 .liblist{list-style:none;margin:0;padding:0;display:grid;gap:10px;counter-reset:item}
 .item{counter-increment:item;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px 14px 52px;position:relative;display:grid;gap:10px;min-width:0}
@@ -246,6 +249,7 @@ select{padding:8px;border-radius:8px;border:1px solid var(--line);background:var
     </div>
     <div id="libNote" class="note" hidden></div>
     <p class="libsum" id="libSum"></p>
+    <div class="libready" id="libReady" hidden><span></span><button class="primary"></button></div>
     <ol class="liblist" id="libList"></ol>
   </section>
 
@@ -1225,7 +1229,7 @@ document.addEventListener('keydown',e=>{
 
 
 /* ================= Sentence library ================= */
-const LIB={lv:store.get('libLevel',10), filter:'all', active:null, revealed:{}, speaking:null, results:{}, audio:{}, saved:store.get('lib',{})};
+const LIB={lv:store.get('libLevel',10), filter:'all', active:null, revealed:{}, hist:store.get('libHist',{}), speaking:null, results:{}, audio:{}, saved:store.get('lib',{})};
 let TAB=store.get('tab','lib');
 function setTab(t){
   TAB=t; store.set('tab',t);
@@ -1250,7 +1254,7 @@ function renderLib(){
   });
   const all=LBANK[LIB.lv], rec=all.filter(t=>LIB.saved[t]);
   const avg=rec.length?rec.reduce((a,t)=>a+LIB.saved[t].best,0)/rec.length:null;
-  $('libSum').textContent=`${levelName(LIB.lv)} · ${all.length} sentences · ${rec.length} recorded`+(avg!=null?` · average best score ${avg.toFixed(1)}`:'');
+  libSummary();
   const ol=$('libList'); ol.innerHTML='';
   const items=libItems();
   if(!items.length){ const li=document.createElement('li'); li.className='libempty'; li.textContent=LIB.filter==='new'?'You have recorded every sentence at this level.':'No sentences scored below 4 at this level.'; ol.appendChild(li); return }
@@ -1261,9 +1265,11 @@ function renderItem(li){
   const t=li._t, r=LIB.results[t], s=LIB.saved[t], recOn=LIB.active===t, playing=LIB.speaking===t;
   li.className='item'+(recOn?' rec':'')+(playing?' playing':'');
   li.innerHTML='';
-  const hide=!$('libHide').checked && !r && !LIB.revealed[t];
+  // Hidden unless the latest attempt just finished: every new Listen or Record hides it again.
+  const hide=!$('libHide').checked && !LIB.revealed[t];
+  const showRes=r && !hide && !recOn;
   const tx=document.createElement('div'); tx.className='itxt'+(hide?' hidden-text':''); if(hide) tx.setAttribute('aria-label','Sentence hidden until you record it');
-  if(r){
+  if(showRes){
     r.res.lead.forEach(x=>tx.appendChild(wordEl(x,'d-extra')));
     t.split(/\s+/).forEach((w,i)=>{ const st=r.res.status[i];
       if(st.c==='sub'){const el=wordEl(w,'d-sub');const sm=document.createElement('small');sm.textContent=st.said;el.appendChild(sm);tx.appendChild(el)}
@@ -1277,11 +1283,11 @@ function renderItem(li){
   if(LIB.audio[t]){const mb=document.createElement('button');mb.textContent='▶ My recording';mb.onclick=()=>{libHalt();if(player)player.pause();player=new Audio(LIB.audio[t]);player.play().catch(()=>{})};row.appendChild(mb)}
   if(hide){const sb=document.createElement('button');sb.className='peek';sb.textContent='Show text';sb.onclick=()=>{LIB.revealed[t]=true;renderItem(li)};row.appendChild(sb)}
   const wcs=document.createElement('span'); wcs.className='iwc'; wcs.textContent=wc(t)+' words'; row.appendChild(wcs);
-  if(r||s){ const p=r?r.final:s.last; const pill=document.createElement('span'); pill.className='ipts '+tone(p); pill.textContent=`${p}/5`; pill.title=s?`Best ${s.best} · recorded ${s.n} time${s.n>1?'s':''}`:''; row.appendChild(pill) }
+  if((showRes&&r)||s){ const p=showRes&&r?r.final:s.best; const pill=document.createElement('span'); pill.className='ipts '+tone(p); pill.textContent=showRes&&r?`${p}/5`:`best ${p}/5`; pill.title=s?`Best ${s.best} · recorded ${s.n} time${s.n>1?'s':''}`:''; row.appendChild(pill) }
   li.append(tx,row);
   const info=document.createElement('div'); info.className='ilive';
   if(recOn){ info.textContent=LIB.heard||'Recording… say the sentence.'; info.classList.add('listening') }
-  else if(r){
+  else if(showRes){
     info.textContent=(r.res.said?`${RUBRIC[r.final].split(':')[0]}. ${r.res.reason||''}`:"I didn't hear anything. Check that the microphone is on.")
       +(r.capped?` Lowered from ${r.res.points}: hard to understand (${Math.round(r.conf*100)}% confidence).`:'');
     if(r.res.said){const b=document.createElement('div');b.className='said';b.innerHTML='You said: <b></b>';b.querySelector('b').textContent=r.res.said;info.appendChild(b)}
@@ -1296,7 +1302,7 @@ function libHalt(){
 }
 function libListen(t){
   libHalt(); if(player){player.pause();player=null}
-  LIB.speaking=t; libRefresh(t);
+  LIB.speaking=t; LIB.revealed[t]=false; libRefresh(t);
   const tok=S.token;
   speak(t,tok).then(()=>{
     if(LIB.speaking!==t) return;
@@ -1311,7 +1317,7 @@ async function libRecord(t){
   if(!SR || !S.cfg.mic){ alertNote("Speech checking is off or not supported here. Turn on 'Check my speech' in the practice settings and use Chrome or Edge."); return }
   await ensureStream();
   beep();
-  LIB.active=t; LIB.heard=''; LIB.confs=[]; LIB.lastAt=0; LIB.t0=performance.now(); LIB.chunks=[];
+  LIB.revealed[t]=false; LIB.active=t; LIB.heard=''; LIB.confs=[]; LIB.lastAt=0; LIB.t0=performance.now(); LIB.chunks=[];
   try{ if(micStream&&window.MediaRecorder){ const mr=new MediaRecorder(micStream); LIB.mr=mr; mr.ondataavailable=e=>{if(e.data.size)LIB.chunks.push(e.data)}; mr.start() } }catch(e){ LIB.mr=null }
   try{
     const r=new SR(); LIB.sr=r; r.lang=S.cfg.lang; r.interimResults=true; r.continuous=true;
@@ -1340,6 +1346,8 @@ async function libStop(){
   const res=compare(t,LIB.heard), cs=LIB.confs.filter(c=>c>0), conf=cs.length?cs.reduce((a,b)=>a+b,0)/cs.length:null;
   const cap=intelligibilityCap(conf), final=Math.min(res.points,cap);
   LIB.results[t]={res,final,conf,capped:final<res.points};
+  LIB.revealed[t]=true;
+  if(res.said){ const h=LIB.hist[LIB.lv]||[]; h.push(final); LIB.hist[LIB.lv]=h.slice(-20); store.set('libHist',LIB.hist) }
   if(res.said){ const o=LIB.saved[t]||{best:0,n:0}; LIB.saved[t]={best:Math.max(o.best,final),last:final,n:o.n+1}; store.set('lib',LIB.saved) }
   libRefresh(t); renderLibHeader();
 }
@@ -1347,9 +1355,24 @@ function renderLibHeader(){ const keep=$('libList'); const items=[...keep.childr
 function renderLibChipsAndSum(){
   const all=LBANK[LIB.lv], rec=all.filter(t=>LIB.saved[t]);
   const avg=rec.length?rec.reduce((a,t)=>a+LIB.saved[t].best,0)/rec.length:null;
-  $('libSum').textContent=`${levelName(LIB.lv)} · ${all.length} sentences · ${rec.length} recorded`+(avg!=null?` · average best score ${avg.toFixed(1)}`:'');
+  libSummary();
   [...$('libLevels').children].forEach(b=>{ const lv=+b.dataset.lv, done=LBANK[lv].filter(x=>LIB.saved[x]).length;
     b.querySelector('span').textContent=`${done?done+' / ':''}${LBANK[lv].length}` });
+}
+// Ready to move up when your last 10 attempts at this level average 4 or more.
+function libSummary(){
+  const all=LBANK[LIB.lv], rec=all.filter(t=>LIB.saved[t]);
+  const h=(LIB.hist[LIB.lv]||[]).slice(-10), avg=h.length?h.reduce((a,b)=>a+b,0)/h.length:null;
+  $('libSum').textContent=`${levelName(LIB.lv)} · ${all.length} sentences · ${rec.length} practiced`
+    +(avg!=null?` · last ${h.length} attempt${h.length>1?'s':''} average ${avg.toFixed(1)}`:'');
+  const box=$('libReady'), next=LEVELS[LEVELS.indexOf(LIB.lv)+1];
+  if(h.length>=10 && avg>=PASS && next){
+    box.hidden=false; box.className='libready go'; box.querySelector('span').textContent=`Your last 10 attempts average ${avg.toFixed(1)}. You're ready for ${levelName(next)}.`;
+    box.querySelector('button').textContent=`Move up to ${levelName(next)} →`; box.querySelector('button').onclick=()=>{libHalt();LIB.lv=next;store.set('libLevel',next);renderLib();window.scrollTo({top:0})};
+  } else if(h.length && h.length<10){
+    box.hidden=false; box.className='libready'; box.querySelector('span').textContent=`${10-h.length} more attempt${10-h.length>1?'s':''} at this level, then I'll tell you if you're ready to move up (you need an average of 4).`; box.querySelector('button').hidden=true; return;
+  } else box.hidden=true;
+  box.querySelector('button').hidden=false;
 }
 function alertNote(msg){ const n=$('libNote'); n.textContent=msg; n.hidden=false }
 $('tabLib').onclick=()=>setTab('lib'); $('tabPrac').onclick=()=>setTab('prac');
