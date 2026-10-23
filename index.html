@@ -136,7 +136,7 @@ button:disabled{opacity:.45;cursor:default}
 .btn-speak{border-color:var(--speak);color:var(--speak)}
 .spacer{flex:1}
 
-.ladder{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;align-items:end}
+.ladder{display:grid;grid-template-columns:repeat(var(--cols,7),minmax(0,1fr));gap:8px;align-items:end}
 .rung{display:grid;gap:6px;justify-items:center;background:none;border:0;padding:0;min-height:0;border-radius:6px}
 .rung .col{width:100%;border-radius:6px 6px 3px 3px;background:var(--bg);border:1px solid var(--line);transition:background .2s}
 .rung.cur .col{background:var(--listen-soft);border-color:var(--listen)}
@@ -153,6 +153,17 @@ aside{display:grid;gap:20px;min-width:0}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:grid;gap:14px}
 .panel h2{font-family:var(--display);font-size:1rem;margin:0}
 .lab{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.levels{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.levels button{flex-direction:column;gap:0;padding:6px;min-height:52px;justify-content:center;line-height:1.2}
+.levels b{font-family:var(--mono);font-weight:500;font-size:.92rem}
+.levels span{font-size:.68rem;color:var(--muted);font-family:var(--mono)}
+.levels button.passed{background:var(--ok-soft);border-color:var(--ok)}
+.levels button.passed span{color:var(--ok)}
+.levels button.target{border-color:var(--speak);box-shadow:inset 0 0 0 1px var(--speak)}
+.levels button.target span{color:var(--speak)}
+.levels button[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 2px var(--ink)}
+.levelverdict{margin:0;padding:10px 14px;border-radius:10px;font-weight:700}
+.levelverdict.ok{background:var(--ok-soft);color:var(--ok)} .levelverdict.mid{background:var(--speak-soft);color:var(--speak)} .levelverdict.miss{background:var(--miss-soft);color:var(--miss)}
 .drills{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .drills button{flex-direction:column;gap:0;padding:8px;font-size:.9rem}
 .drills button span{font-size:.7rem;color:var(--muted);font-family:var(--mono)}
@@ -208,9 +219,9 @@ select{padding:8px;border-radius:8px;border:1px solid var(--line);background:var
       </div>
 
       <div id="doneBox" class="done" hidden>
-        <h3>Set finished</h3>
+        <h3 id="doneHead">Set finished</h3>
         <div id="doneTxt"></div>
-        <div class="controls"><button id="againBtn">Do this set again</button><button class="primary" id="nextSetBtn">Next set →</button></div>
+        <div class="controls"><button id="againBtn">Do this set again</button><button id="downBtn" hidden>Go down</button><button class="primary" id="nextSetBtn">Next set →</button></div>
       </div>
 
       <div class="controls" id="mainControls">
@@ -232,8 +243,10 @@ select{padding:8px;border-radius:8px;border:1px solid var(--line);background:var
 
     <aside>
       <div class="panel">
-        <h2>Practice by length</h2>
-        <p class="tip">Seven random sentences from all sets, at one length.</p>
+        <h2>Memory ladder</h2>
+        <p class="tip">Rounds of 5 sentences at one length. Average 4 or more to pass a level, then move up 2 words.</p>
+        <div class="levels" id="levels"></div>
+        <div class="lab">Quick drills</div>
         <div class="drills" id="drills">
           <button data-tier="short">Short<span>5–9 words</span></button>
           <button data-tier="medium">Medium<span>9–13 words</span></button>
@@ -297,6 +310,139 @@ const SETS = [
 ];
 
 const wc = s => s.trim().split(/\s+/).length;
+const EXTRA = [
+"The reading room is on the third floor.",
+"Please sign your name on the visitor list.",
+"Our team meets in this room every Thursday.",
+"The printer next to my desk is broken.",
+"You can borrow a laptop from the office.",
+"Lunch is served in the hall until two.",
+"The parking lot behind the gym is full.",
+"Each student gets a locker in the hallway.",
+"The tour starts in front of the library.",
+"Turn left at the end of the corridor.",
+"The new schedule will be posted next week.",
+"Please bring a pen and your student card.",
+"The student lounge has comfortable sofas and a small kitchen.",
+"You can find the lost and found box near reception.",
+"Our biology professor holds office hours on Tuesday afternoons.",
+"Please turn off your phone before the lecture begins today.",
+"The art studio is open to students on weekends too.",
+"New employees receive their badges on the first working day.",
+"The campus bookstore is closed during the winter holiday break.",
+"Remember to bring your lab coat to every chemistry class.",
+"Free coffee is available in the lobby every morning.",
+"The writing center helps students organize and edit their essays.",
+"Visitors must check in at the security desk before entering.",
+"Most of our meetings are held in the conference room.",
+"The library offers free workshops on research skills every Wednesday evening.",
+"Please put used paper in the blue recycling bins near the stairs.",
+"Students who live on campus can use the laundry room at night.",
+"The cafeteria serves breakfast from seven until ten every weekday morning.",
+"If you are late for class, enter quietly through the back door.",
+"Our manager will send the updated project timeline to everyone by Friday.",
+"The computer lab gets very busy during the last week of the semester.",
+"You can reserve a tennis court online up to three days ahead.",
+"Graduate students have their own study room on the second floor.",
+"The museum is free for students, but you need to show identification.",
+"All new members should attend the safety training before using the equipment.",
+"The front office collects mail for students who live in the dorms.",
+"Before you leave the lab, make sure every burner is off and the sink is clean.",
+"The fitness center offers yoga classes in the morning and spin classes in the evening.",
+"Please return library books on time, or you will have to pay a small fine.",
+"Our office moved to the fourth floor, so please update the address on your forms.",
+"Students can print up to fifty pages for free in the computer lab each week.",
+"The music building has several practice rooms that can be booked for one hour.",
+"If the elevator is out of service, please use the stairs at the end of the hall.",
+"During exam week, the library stays open twenty-four hours a day for all students.",
+"New volunteers should meet the coordinator at the information desk on Saturday morning.",
+"The campus shuttle stops in front of the student center every fifteen minutes.",
+"Employees who work late can order dinner through the company app until eight.",
+"Please keep the kitchen clean by washing your dishes right after you use them.",
+"The science building will be closed for repairs next week, so classes will meet in the library.",
+"If you need a quiet place to study, the reading room upstairs is usually almost empty.",
+"Our department organizes a welcome party for new students at the beginning of every fall semester.",
+"Please remember to lock the storage room after you return the equipment you borrowed for class.",
+"The career center helps students write their resumes and practice for job interviews with real employers.",
+"Visitors can park in the lot behind the theater, but they need a pass from the front desk.",
+"Before submitting your assignment online, check that your name and student number appear on the first page.",
+"The cafeteria offers a different international dish every Friday, and students can vote for their favorite.",
+"If you feel sick during an exam, raise your hand and the instructor will help you right away.",
+"The company provides free bicycles that employees can use to travel between the two office buildings.",
+"Each new resident receives a welcome package with a map of the campus and a meal card.",
+"The art gallery downstairs shows paintings by local students and changes its exhibition every two months.",
+"Students who want to join the hiking club should sign up at the student center before the end of September.",
+"The library has a special collection of rare books, but you must ask a librarian before you can view them.",
+"Our weekly team meeting has moved to Monday mornings so that everyone can plan their work for the week.",
+"If you lose your student card, report it to the security office immediately so that nobody else can use it.",
+"The language center offers free conversation groups where international students can practice speaking English with native speakers.",
+"Please make sure that all windows are closed and the lights are off before you leave the classroom tonight.",
+"The new parking rules start next month, and every car on campus will need a permit displayed on the window.",
+"Lab assistants are available every afternoon to answer questions about the experiments and help students use the equipment safely.",
+"The cafeteria will close early on Friday because the staff are preparing food for the graduation ceremony on Saturday.",
+"Anyone who wants to use the recording studio must complete a short training session with one of the technicians first.",
+"The student newspaper is looking for photographers and writers who can cover sports events and concerts on campus this year.",
+"Because the main entrance is being repaired, visitors should use the side door next to the parking garage this week.",
+"If you would like to borrow a camera from the media center, you need to fill out a form and leave your student card.",
+"The university gym is free for all students, but you must bring a towel and wear proper shoes when you use the machines.",
+"Our office will be moving to a new building next month, so please pack your personal items in the boxes provided by Friday.",
+"Students who miss more than three classes without a good reason may not be allowed to take the final exam at the end.",
+"The library recently added a new study area with large tables, comfortable chairs, and outlets for charging laptops and phones.",
+"Every spring, the environmental club organizes a cleanup day when students and teachers work together to pick up trash around campus.",
+"Please remember that food and drinks are not allowed in the computer lab because they can damage the keyboards and other equipment.",
+"If the fire alarm goes off during class, leave your belongings behind and walk calmly to the parking lot across the street.",
+"New employees should complete their online training within the first two weeks and send the certificate to their manager by email.",
+"The campus health center offers free vaccinations every October, and students can walk in without making an appointment in advance.",
+"Tickets for the spring concert go on sale next Monday, and students can buy up to two tickets at a discount price.",
+"Because the heating system is being repaired, some classrooms in the east building may feel cold, so please dress warmly this week.",
+"Students who want to study abroad next year should attend the information session on Thursday, where advisers will explain the application process step by step.",
+"The library will extend its opening hours during the final exam period, but the cafe on the ground floor will close at the usual time.",
+"If you are planning to use the large lecture hall for a club event, you must reserve it at least two weeks before the event date.",
+"Our company encourages employees to take short breaks during the day, so we have set up a quiet room with comfortable chairs and soft lighting.",
+"Before the experiment begins, every student must read the safety instructions carefully and sign a form confirming that they understand the rules of the lab.",
+"The student council is collecting ideas for improving campus life, and anyone can submit a suggestion online or drop a note in the box outside.",
+"Because many students have asked for more quiet places to work, the university has turned two old classrooms into study rooms that anyone can use.",
+"Visitors who arrive after six in the evening should enter through the main gate and show identification to the security guard at the front desk.",
+"The research assistant position is open to second-year students who have completed the statistics course and can work at least ten hours every week.",
+"Please remember that all assignments must be submitted through the online system, because the professor will not accept papers sent by email this semester.",
+"During the orientation week, new students will take a campus tour, meet their academic advisers, and attend a welcome dinner in the main dining hall.",
+"The museum offers guided tours in several languages every Saturday, and groups of more than ten people are asked to book their visit in advance.",
+"The bookstore will buy back used textbooks at the end of each semester for about half the original price.",
+"If you need extra help with math, tutors are available in the learning center every afternoon from one to five.",
+"All visitors to the laboratory must wear safety glasses, even if they are only staying for a few minutes.",
+"The company cafeteria now offers vegetarian and gluten-free options, and the menu changes every week.",
+"Please do not leave bags or coats on the chairs in the library, because other students need places to sit.",
+"The swimming pool will be closed on Monday morning for cleaning, but it will reopen at noon as usual.",
+"Students who work on campus must submit their timesheets online by the last Friday of every month.",
+"Our new office has a rooftop garden where employees can eat lunch or relax during their breaks.",
+"The dance studio on the second floor can be reserved by student groups for rehearsals on weekday evenings.",
+"If your package arrives while you are in class, the mail room will keep it for you for up to a week.",
+"Because the bus schedule changed this semester, students who live off campus should check the new times online.",
+"The university orchestra is looking for violin and cello players, and auditions will be held next Tuesday afternoon.",
+"The writing center will be closed next Monday, but students can still book online appointments with tutors through the website.",
+"Everyone who uses the shared kitchen should label their food with their name and the date before putting it away.",
+"If you want to change your major, you should first talk to your academic adviser and then fill out a form online.",
+"The library now lends tablets to students for up to two weeks, but they must be returned in the original case.",
+"Please keep in mind that the art supplies in the cabinet are for class projects only and should not be taken home.",
+"New students who have not received their email accounts yet should visit the technology help desk in the main library building.",
+"If you plan to stay on campus during the winter break, you need to let the housing office know before the end of November.",
+"The campus garden needs volunteers on Saturday mornings to water the plants, pull weeds, and harvest vegetables for the student food pantry.",
+"Before you use the photocopier for the first time, ask the office assistant to set up an account with your employee number and password.",
+"Our department is hosting a guest speaker next Thursday evening, and students who attend the talk will receive extra credit in the course.",
+"Because the main lecture hall is being renovated this semester, several large classes will meet in the auditorium of the arts building instead.",
+"Students who would like to live in a single room next year should apply early, because there are only a limited number available.",
+"The fitness center is offering a free six-week program for beginners, which includes a personal plan and weekly meetings with a trainer.",
+"If you notice anything broken in your dorm room, such as a leaking faucet or a broken window, submit a repair request online right away.",
+"The cafeteria is looking for student workers who can help in the kitchen during lunch hours, and the job pays a little above minimum wage."
+];
+// Memory ladder: each level covers two lengths (10–11 words, 12–13 words, ...).
+const LEVELS=[8,10,12,14,16,18,20,22,24];
+const PASS=4;   // average needed to pass a level
+const levelOf = n => n<8 ? null : Math.min(24, n-(n%2));
+const levelName = lv => lv===24 ? '24+ words' : `${lv}–${lv+1} words`;
+const LBANK={}; LEVELS.forEach(l=>LBANK[l]=[]);
+[...new Set([...SETS.flatMap(x=>x[1]), ...EXTRA])].forEach(t=>{ const l=levelOf(wc(t)); if(l!=null) LBANK[l].push(t) });
+const ROUND=5;
 const POOL = {short:[],medium:[],long:[]};
 SETS.forEach(([,ss])=>ss.forEach((s,i)=>{ (i<2?POOL.short:i<5?POOL.medium:POOL.long).push(s); }));
 
@@ -309,7 +455,7 @@ const store = {
 const S = {
   mode:{type:'set',idx:store.get('setIdx',0)},
   queue:[], pos:0, phase:'idle', running:false, results:[], token:0, timers:[],
-  done:store.get('doneSets',[]), setScores:store.get('setScores',{}), scores:[],
+  done:store.get('doneSets',[]), setScores:store.get('setScores',{}), levels:store.get('levels',{}), decks:{}, scores:[],
   cfg:Object.assign({rate:0.95,extra:0,show:'after',auto:true,beep:true,voice:'',mic:true,lang:'en-US'},store.get('cfg',{}))
 };
 const synth = window.speechSynthesis;
@@ -580,7 +726,7 @@ const band = avg => Math.max(1, Math.min(6, Math.round((1+avg)*2)/2));
 const tone = p => p==null?'':p>=4?'ok':p===3?'mid':'miss';
 
 /* ---------- timing ---------- */
-const respondSecs = s => Math.min(12,Math.max(8,Math.round(5+wc(s)*0.4))) + S.cfg.extra;
+const respondSecs = s => Math.min(16,Math.max(8,Math.round(5+wc(s)*0.4))) + S.cfg.extra;
 function later(fn,ms,tok){const t=setTimeout(()=>{if(tok===S.token)fn()},ms);S.timers.push(t)}
 function stopAll(){S.token++;S.timers.forEach(clearTimeout);S.timers=[];cancelAnimationFrame(rafId);if(synth)synth.cancel();abortListening();cancelRecording();if(player){player.pause();player=null}}
 let player=null;
@@ -592,6 +738,13 @@ function playModel(){ holdAuto(); if(player){player.pause();player=null} speak(S
 function loadMode(m){
   stopAll(); S.mode=m; S.pos=0; S.running=false; S.phase='idle';
   if(m.type==='set'){S.queue=SETS[m.idx][1].slice(); store.set('setIdx',m.idx)}
+  else if(m.type==='level'){
+    // Deal from a shuffled deck so sentences don't repeat until the level's bank runs out.
+    let d=S.decks[m.lv];
+    if(!d||d.length<ROUND){ const p=LBANK[m.lv].slice(); for(let i=p.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[p[i],p[j]]=[p[j],p[i]]} d=S.decks[m.lv]=(d||[]).concat(p.filter(x=>!(d||[]).includes(x))) }
+    S.queue=d.splice(0,ROUND).sort((a,b)=>wc(a)-wc(b));
+    store.set('lastLevel',m.lv);
+  }
   else{
     const p=POOL[m.tier].slice(); for(let i=p.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[p[i],p[j]]=[p[j],p[i]]}
     S.queue=p.slice(0,7).sort((a,b)=>wc(a)-wc(b));
@@ -658,6 +811,11 @@ function finish(){
   if(S.mode.type==='set' && S.scores.every(x=>x!=null)){
     S.setScores[S.mode.idx]=S.scores.reduce((a,b)=>a+b,0); store.set('setScores',S.setScores);
   }
+  if(S.mode.type==='level' && S.scores.some(x=>x!=null)){
+    const avg=S.scores.reduce((a,b)=>a+(b||0),0)/S.queue.length, L=S.levels[S.mode.lv]||{rounds:0,best:0,passed:false};
+    L.rounds++; L.last=avg; L.best=Math.max(L.best,avg); if(avg>=PASS) L.passed=true;
+    S.levels[S.mode.lv]=L; store.set('levels',S.levels); S.lastAvg=avg;
+  }
   render();
 }
 function go(d){ const n=S.pos+d; if(n<0||n>=S.queue.length) return; S.pos=n; if(S.running) playCurrent(); else {stopAll();S.phase='idle';render()} }
@@ -680,6 +838,7 @@ function render(){
   const m=S.mode;
   $('setTitle').innerHTML = m.type==='set'
     ? `<small>Set ${m.idx+1} of ${SETS.length}</small>${SETS[m.idx][0]}`
+    : m.type==='level' ? `<small>Memory ladder · level ${LEVELS.indexOf(m.lv)+1} of ${LEVELS.length}</small>${levelName(m.lv)}`
     : `<small>Length drill</small>${m.tier[0].toUpperCase()+m.tier.slice(1)} sentences`;
   const ph = S.phase==='checking'?'respond':S.phase;
   $('phase').dataset.p=ph; $('phaseTxt').textContent=PHASE_TXT[S.phase];
@@ -717,9 +876,24 @@ function render(){
     }
     const note=document.createElement('p'); note.className='tip';
     note.textContent=(unscored?`${unscored} sentence${unscored>1?'s were':' was'} not scored and counted as 0. `:'')
-      +'The band is a rough guide. On the real test, these seven scores are combined with your Take an Interview scores to give one Speaking band.';
+      +'The band is a rough guide. On the real test, the seven Listen and Repeat scores are combined with your Take an Interview scores to give one Speaking band.';
     d.appendChild(note);
     $('nextSetBtn').textContent = m.type==='set' ? 'Next set →' : 'New drill →';
+    $('againBtn').textContent = m.type==='set' ? 'Do this set again' : m.type==='level' ? 'New round at this level' : 'New drill';
+    $('downBtn').hidden=true;
+    $('doneHead').textContent = m.type==='set' ? 'Set finished' : 'Round finished';
+    if(m.type==='level'){
+      const i=LEVELS.indexOf(m.lv), next=LEVELS[i+1], prev=LEVELS[i-1];
+      const lv=document.createElement('p'); lv.className='levelverdict '+(avg>=PASS?'ok':avg>=3?'mid':'miss');
+      if(avg>=PASS) lv.textContent = next ? `Level passed: ${avg.toFixed(1)} average. You're ready for ${levelName(next)}.` : `Level passed: ${avg.toFixed(1)} average on the longest sentences. Excellent memory work.`;
+      else if(avg>=3) lv.textContent = `${avg.toFixed(1)} average. You need ${PASS.toFixed(1)} to pass, so stay at this level for another round.`;
+      else lv.textContent = `${avg.toFixed(1)} average. These are still hard, so do a round one level down, then come back.`;
+      d.prepend(lv);
+      if(avg>=PASS && next){ $('nextSetBtn').textContent=`Go up to ${levelName(next)} →`; $('nextSetBtn').dataset.go=next }
+      else { $('nextSetBtn').textContent='Another round at this level →'; $('nextSetBtn').dataset.go=m.lv }
+      $('againBtn').hidden=true;
+      if(avg<3 && prev){ $('downBtn').hidden=false; $('downBtn').textContent=`Go down to ${levelName(prev)}`; $('downBtn').dataset.go=prev }
+    } else $('againBtn').hidden=false;
   }
   if(S.phase!=='respond'){ $('ringNum').textContent=Math.min(S.pos+1,S.queue.length); $('ringSub').textContent='of '+S.queue.length; }
   if(S.phase==='idle') setRing(S.pos/S.queue.length);
@@ -803,7 +977,7 @@ function summary(r){
   return parts.length ? parts.join(', ')+'.' : '';
 }
 function renderLadder(){
-  const L=$('ladder'); L.innerHTML='';
+  const L=$('ladder'); L.innerHTML=''; L.style.setProperty('--cols',S.queue.length);
   const max=Math.max(...S.queue.map(wc));
   S.queue.forEach((s,i)=>{
     const b=document.createElement('button'); b.className='rung';
@@ -829,6 +1003,17 @@ function renderPickers(){
     if(v!=null){ if(!t){t=document.createElement('span');t.className='last';b.appendChild(t)} t.textContent=v+'/35'; t.title='Last score'; }
   });
   document.querySelectorAll('#drills button').forEach(b=>b.setAttribute('aria-pressed',S.mode.type==='drill'&&S.mode.tier===b.dataset.tier));
+  const box=$('levels');
+  if(!box.children.length) LEVELS.forEach(lv=>{ const b=document.createElement('button'); b.dataset.lv=lv; b.onclick=()=>loadMode({type:'level',lv}); box.appendChild(b) });
+  // The level to work on: the first one not yet passed.
+  const target=LEVELS.find(l=>!(S.levels[l]&&S.levels[l].passed));
+  [...box.children].forEach(b=>{
+    const lv=+b.dataset.lv, L=S.levels[lv];
+    b.className=(L&&L.passed?'passed':'')+(lv===target?' target':'');
+    b.setAttribute('aria-pressed', String(S.mode.type==='level'&&S.mode.lv===lv));
+    b.innerHTML=`<b>${lv===24?'24+':lv+'–'+(lv+1)}</b><span>${L?(L.passed?'✓ ':'')+'best '+L.best.toFixed(1):lv===target?'start here':'words'}</span>`;
+    b.title=levelName(lv)+(L?` · ${L.rounds} round${L.rounds>1?'s':''} · last ${L.last.toFixed(1)}`:'');
+  });
 }
 
 /* ---------- wiring ---------- */
@@ -838,7 +1023,8 @@ $('prevBtn').onclick=()=>go(-1); $('nextBtn').onclick=()=>go(1);
 $('rateBox').querySelectorAll('button').forEach(b=>b.onclick=()=>setScore(+b.dataset.p));
 $('doneSpeakBtn').onclick=()=>check(S.token);
 $('againBtn').onclick=()=>{loadMode(S.mode);start()};
-$('nextSetBtn').onclick=()=>{ if(S.mode.type==='set') loadMode({type:'set',idx:(S.mode.idx+1)%SETS.length}); else loadMode(S.mode); start(); };
+$('nextSetBtn').onclick=()=>{ if(S.mode.type==='set') loadMode({type:'set',idx:(S.mode.idx+1)%SETS.length}); else if(S.mode.type==='level') loadMode({type:'level',lv:+$('nextSetBtn').dataset.go}); else loadMode(S.mode); start(); };
+$('downBtn').onclick=()=>{ loadMode({type:'level',lv:+$('downBtn').dataset.go}); start(); };
 document.querySelectorAll('#drills button').forEach(b=>b.onclick=()=>loadMode({type:'drill',tier:b.dataset.tier}));
 
 function bindCfg(){
